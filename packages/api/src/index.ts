@@ -1,6 +1,7 @@
 // Entry point for BlueCollar API
 import express from 'express'
 import cors from 'cors'
+import path from 'node:path'
 import passport from './config/passport.js'
 import authRoutes from './routes/auth.js'
 import categoryRoutes from './routes/categories.js'
@@ -14,6 +15,10 @@ app.use(cors())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(passport.initialize())
+
+// Serve static files from storage directory
+const UPLOAD_DIR = process.env.UPLOAD_DIR || 'storage/uploads'
+app.use('/storage', express.static(path.resolve('storage')))
 
 app.use('/api/auth', authRoutes)
 app.use('/api/categories', categoryRoutes)
