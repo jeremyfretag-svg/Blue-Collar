@@ -3,7 +3,7 @@ import { db } from '../db.js'
 import argon2 from 'argon2'
 import jwt from 'jsonwebtoken'
 import crypto from 'node:crypto'
-import { sendVerificationEmail } from '../mailer/index.js'
+import { sendVerificationEmail, sendPasswordResetEmail } from '../mailer/index.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -147,11 +147,62 @@ export async function logout(_req: Request, res: Response) {
 }
 
 export async function forgotPassword(req: Request, res: Response) {
-  // TODO: send reset email
-  return res.status(200).json({ status: 'success', message: 'Reset link sent if account exists', code: 200 })
+  const { email } = req.body
+
+  const user = await db.user.findUnique({ where: { email } })
+
+  // Security: Always return 200 to prevent user enumeration
+  if (user) {
+    const rawToken = crypto.randomBytes(32).toString('hex')
+    const hash = crypto.createHash('sha256').update(rawToken).digest('hex')
+    const expiry = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+    await db.user.update({
+      where: { id: user.id },
+      data: { resetToken: hash, resetTokenExpiry: expiry },
+    })
+
+    sendPasswordResetEmail(user.email, user.firstName, rawToken).catch((err) =>
+      console.error('[mailer] Failed to send password reset email:', err),
+    )
+  }
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'If an account exists with that email, a password reset link has been sent.',
+    code: 200,
+  })
 }
 
 export async function resetPassword(req: Request, res: Response) {
-  // TODO: validate token and update password
+  const { token, password } = req.body
+
+  if (!token || !password) {
+    return res.status(400).json({ status: 'error', message: 'Token and password are required', code: 400 })
+  }
+
+  const hash = crypto.createHash('sha256').update(token).digest('hex')
+  const user = await db.user.findFirst({
+    where: {
+      resetToken: hash,
+      resetTokenExpiry: { gt: new Date() },
+    },
+  })
+
+  if (!user) {
+    return res.status(400).json({ status: 'error', message: 'Token is invalid or has expired', code: 400 })
+  }
+
+  const hashedPassword = await argon2.hash(password)
+
+  await db.user.update({
+    where: { id: user.id },
+    data: {
+      password: hashedPassword,
+      resetToken: null,
+      resetTokenExpiry: null,
+    },
+  })
+
   return res.status(200).json({ status: 'success', message: 'Password reset successful', code: 200 })
 }
