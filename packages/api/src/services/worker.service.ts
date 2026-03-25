@@ -3,6 +3,13 @@ import { AppError } from './AppError.js'
 import type { CreateWorkerBody, UpdateWorkerBody, WorkerQuery } from '../interfaces/index.js'
 
 export async function listWorkers({ category, page = 1, limit = 20 }: WorkerQuery & { page?: number; limit?: number }) {
+
+export async function listWorkers(opts: {
+  category?: string
+  page?: number
+  limit?: number
+}) {
+  const { category, page = 1, limit = 20 } = opts
   return db.worker.findMany({
     where: { isActive: true, ...(category ? { categoryId: category } : {}) },
     skip: (page - 1) * limit,
@@ -23,6 +30,12 @@ export async function createWorker(data: CreateWorkerBody, curatorId: string) {
 
 export async function updateWorker(id: string, data: UpdateWorkerBody) {
   return db.worker.update({ where: { id }, data })
+export async function createWorker(data: Record<string, unknown>, curatorId: string) {
+  return db.worker.create({ data: { ...data, curatorId } as any })
+}
+
+export async function updateWorker(id: string, data: Record<string, unknown>) {
+  return db.worker.update({ where: { id }, data: data as any })
 }
 
 export async function deleteWorker(id: string) {

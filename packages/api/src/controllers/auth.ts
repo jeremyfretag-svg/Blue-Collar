@@ -15,6 +15,9 @@ function handleError(res: Response, err: unknown) {
 export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
   try {
     const { data, token } = await authService.loginUser(req.body)
+export async function login(req: Request, res: Response) {
+  try {
+    const { data, token } = await authService.loginUser(req.body.email, req.body.password)
     return res.status(202).json({ data, status: 'success', message: 'Login successful', code: 202, token })
   } catch (err) {
     return handleError(res, err)
@@ -24,6 +27,10 @@ export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
 export async function register(req: Request<{}, {}, RegisterBody>, res: Response) {
   try {
     const data = await authService.registerUser(req.body)
+export async function register(req: Request, res: Response) {
+  try {
+    const { email, password, firstName, lastName } = req.body
+    const data = await authService.registerUser(email, password, firstName, lastName)
     return res.status(201).json({
       data,
       status: 'success',
@@ -63,6 +70,7 @@ export async function logout(_req: Request, res: Response) {
 }
 
 export async function forgotPassword(req: Request<{}, {}, ForgotPasswordBody>, res: Response) {
+export async function forgotPassword(req: Request, res: Response) {
   await authService.requestPasswordReset(req.body.email)
   return res.status(200).json({
     status: 'success',
