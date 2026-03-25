@@ -145,10 +145,22 @@ describe('verifyAccount', () => {
     })
     ;(db.user.update as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'user-1', verified: true })
 
+    const result = await verifyAccount(validToken)
+    expect(result).toBe(true)
     await verifyAccount(validToken)
 
     const updateCall = (db.user.update as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(updateCall.data.verified).toBe(true)
+  })
+
+  it('returns false when account is already verified', async () => {
+    const validToken = signVerificationToken('user-1')
+    ;(db.user.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'user-1',
+      verified: true,
+    })
+    const result = await verifyAccount(validToken)
+    expect(result).toBe(false)
   })
 
   it('throws AppError 400 for an invalid token', async () => {

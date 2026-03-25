@@ -17,6 +17,8 @@ function generateVerificationToken(userId: string) {
 }
 
 export async function loginUser({ email, password }: LoginBody) {
+  const user = await db.user.findUnique({ where: { email } })
+  if (!user || !user.password || !(await argon2.verify(user.password, password))) {
 export async function loginUser(email: string, password: string) {
   const user = await db.user.findUnique({ where: { email } })
   if (!user || !(await argon2.verify(user.password, password))) {
@@ -61,6 +63,10 @@ export async function registerUser(
   )
 
   return sanitizeUser(user)
+}
+
+/** Returns true if newly verified, false if already verified. */
+export async function verifyAccount(token: string): Promise<boolean> {
   const { password: _, verificationToken: __, verificationTokenExpiry: ___, ...data } = user
   return data
 }
@@ -79,6 +85,7 @@ export async function verifyAccount(token: string) {
 
   const user = await db.user.findUnique({ where: { id: payload.id } })
   if (!user) throw new AppError('User not found', 404)
+  if (user.verified) return false // already verified
   if (user.verified) return // already verified — no-op
 
   const incomingHash = crypto.createHash('sha256').update(token).digest('hex')
@@ -93,6 +100,7 @@ export async function verifyAccount(token: string) {
     where: { id: user.id },
     data: { verified: true, verificationToken: null, verificationTokenExpiry: null },
   })
+  return true
 }
 
 export async function requestPasswordReset(email: string) {

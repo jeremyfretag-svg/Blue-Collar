@@ -1,4 +1,14 @@
 import type { Request, Response } from 'express'
+import * as categoryService from '../services/category.service.js'
+import { handleError } from '../utils/handleError.js'
+
+export async function listCategories(_req: Request, res: Response) {
+  try {
+    const categories = await categoryService.listCategories()
+    return res.json({ data: categories, status: 'success', code: 200 })
+  } catch (err) {
+    return handleError(res, err)
+  }
 import { AppError } from '../services/AppError.js'
 import * as categoryService from '../services/category.service.js'
 

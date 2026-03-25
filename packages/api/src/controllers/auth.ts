@@ -1,5 +1,30 @@
 import type { Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
+import * as authService from '../services/auth.service.js'
+import { handleError } from '../utils/handleError.js'
+import type { LoginBody, RegisterBody, ForgotPasswordBody, ResetPasswordBody } from '../interfaces/index.js'
+
+export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
+  try {
+    const { data, token } = await authService.loginUser(req.body)
+    return res.status(202).json({ data, status: 'success', message: 'Login successful', code: 202, token })
+  } catch (err) {
+    return handleError(res, err)
+  }
+}
+
+export async function register(req: Request<{}, {}, RegisterBody>, res: Response) {
+  try {
+    const data = await authService.registerUser(req.body)
+    return res.status(201).json({
+      data,
+      status: 'success',
+      message: 'Registration successful. Please check your email to verify your account.',
+      code: 201,
+    })
+  } catch (err) {
+    return handleError(res, err)
+  }
 import { AppError } from '../services/AppError.js'
 import * as authService from '../services/auth.service.js'
 import type { LoginBody, RegisterBody, ForgotPasswordBody, ResetPasswordBody } from '../interfaces/index.js'
@@ -48,6 +73,10 @@ export async function verifyAccount(req: Request, res: Response) {
     return res.status(400).json({ status: 'error', message: 'Verification token is required', code: 400 })
   }
   try {
+    const verified = await authService.verifyAccount(token)
+    const message = verified ? 'Email verified successfully' : 'Email already verified'
+    return res.status(200).json({ status: 'success', message, code: 200 })
+  } catch (err) {
     await authService.verifyAccount(token)
     return res.status(200).json({ status: 'success', message: 'Email verified successfully', code: 200 })
   } catch (err) {
