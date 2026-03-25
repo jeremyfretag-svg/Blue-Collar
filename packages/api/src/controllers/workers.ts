@@ -1,10 +1,28 @@
 import type { Request, Response } from 'express'
+import { AppError } from '../services/AppError.js'
+import * as workerService from '../services/worker.service.js'
+
+function handleError(res: Response, err: unknown) {
+  if (err instanceof AppError) {
+    return res.status(err.statusCode).json({ status: 'error', message: err.message, code: err.statusCode })
+  }
+  console.error(err)
+  return res.status(500).json({ status: 'error', message: 'Internal server error', code: 500 })
+}
+
+export async function listWorkers(req: Request, res: Response) {
+  const { category, page = '1', limit = '20' } = req.query
+  const workers = await workerService.listWorkers({
+    category: category as string | undefined,
+    page: Number(page),
+    limit: Number(limit),
 import { db } from '../db.js'
 import { paginate } from '../utils/paginate.js'
 
 export async function listWorkers(req: Request, res: Response) {
   const { category, search, city, state, country, page = '1', limit = '20' } = req.query
 
+  const { category, page = '1', limit = '20' } = req.query
   const { data, meta } = await paginate({
     model: 'worker',
     where: {
@@ -29,6 +47,8 @@ export async function listWorkers(req: Request, res: Response) {
         : {}),
     },
     include: { category: true, location: true },
+    },
+    include: { category: true },
     page: Number(page),
     limit: Number(limit),
   })
@@ -57,16 +77,16 @@ export async function listWorkers(req: Request, res: Response) {
 }
 
 export async function showWorker(req: Request, res: Response) {
-  const worker = await db.worker.findUnique({
-    where: { id: req.params.id },
-    include: { category: true },
-  })
-  if (!worker) return res.status(404).json({ status: 'error', message: 'Not found', code: 404 })
-  return res.json({ data: worker, status: 'success', code: 200 })
+  try {
+    const worker = await workerService.getWorker(req.params.id)
+    return res.json({ data: worker, status: 'success', code: 200 })
+  } catch (err) {
+    return handleError(res, err)
+  }
 }
 
 export async function createWorker(req: Request, res: Response) {
-  const worker = await db.worker.create({ data: { ...req.body, curatorId: req.user!.id } })
+  const worker = await workerService.createWorker(req.body, req.user!.id)
   return res.status(201).json({ data: worker, status: 'success', code: 201 })
 }
 
@@ -85,6 +105,12 @@ async function resolveWorker(req: Request, res: Response) {
 }
 
 export async function updateWorker(req: Request, res: Response) {
+  const worker = await workerService.updateWorker(req.params.id, req.body)
+  return res.json({ data: worker, status: 'success', code: 200 })
+}
+
+export async function deleteWorker(req: Request, res: Response) {
+  await workerService.deleteWorker(req.params.id)
   const worker = await resolveWorker(req, res)
   if (!worker) return
   const updated = await db.worker.update({ where: { id: worker.id }, data: req.body })
@@ -99,6 +125,12 @@ export async function deleteWorker(req: Request, res: Response) {
 }
 
 export async function toggleActivation(req: Request, res: Response) {
+  try {
+    const updated = await workerService.toggleWorker(req.params.id)
+    return res.json({ data: updated, status: 'success', code: 200 })
+  } catch (err) {
+    return handleError(res, err)
+  }
   const worker = await resolveWorker(req, res)
   if (!worker) return
   const updated = await db.worker.update({
