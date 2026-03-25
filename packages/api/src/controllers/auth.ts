@@ -2,6 +2,7 @@ import type { Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
 import { AppError } from '../services/AppError.js'
 import * as authService from '../services/auth.service.js'
+import type { LoginBody, RegisterBody, ForgotPasswordBody, ResetPasswordBody } from '../interfaces/index.js'
 
 function handleError(res: Response, err: unknown) {
   if (err instanceof AppError) {
@@ -11,6 +12,9 @@ function handleError(res: Response, err: unknown) {
   return res.status(500).json({ status: 'error', message: 'Internal server error', code: 500 })
 }
 
+export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
+  try {
+    const { data, token } = await authService.loginUser(req.body)
 export async function login(req: Request, res: Response) {
   try {
     const { data, token } = await authService.loginUser(req.body.email, req.body.password)
@@ -20,6 +24,9 @@ export async function login(req: Request, res: Response) {
   }
 }
 
+export async function register(req: Request<{}, {}, RegisterBody>, res: Response) {
+  try {
+    const data = await authService.registerUser(req.body)
 export async function register(req: Request, res: Response) {
   try {
     const { email, password, firstName, lastName } = req.body
@@ -62,6 +69,7 @@ export async function logout(_req: Request, res: Response) {
   return res.status(200).json({ status: 'success', message: 'Logged out', code: 200 })
 }
 
+export async function forgotPassword(req: Request<{}, {}, ForgotPasswordBody>, res: Response) {
 export async function forgotPassword(req: Request, res: Response) {
   await authService.requestPasswordReset(req.body.email)
   return res.status(200).json({
@@ -71,7 +79,7 @@ export async function forgotPassword(req: Request, res: Response) {
   })
 }
 
-export async function resetPassword(req: Request, res: Response) {
+export async function resetPassword(req: Request<{}, {}, ResetPasswordBody>, res: Response) {
   const { token, password } = req.body
   if (!token || !password) {
     return res.status(400).json({ status: 'error', message: 'Token and password are required', code: 400 })

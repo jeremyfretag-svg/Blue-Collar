@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken'
 import crypto from 'node:crypto'
 import { sendVerificationEmail, sendPasswordResetEmail } from '../mailer/index.js'
 import { AppError } from './AppError.js'
+import type { LoginBody, RegisterBody } from '../interfaces/index.js'
 
 function generateVerificationToken(userId: string) {
   const raw = jwt.sign({ id: userId, purpose: 'email-verify' }, process.env.JWT_SECRET!, {
@@ -14,6 +15,7 @@ function generateVerificationToken(userId: string) {
   return { raw, hash, expiry }
 }
 
+export async function loginUser({ email, password }: LoginBody) {
 export async function loginUser(email: string, password: string) {
   const user = await db.user.findUnique({ where: { email } })
   if (!user || !(await argon2.verify(user.password, password))) {
@@ -30,6 +32,7 @@ export async function loginUser(email: string, password: string) {
   return { data, token }
 }
 
+export async function registerUser({ email, password, firstName, lastName }: RegisterBody) {
 export async function registerUser(
   email: string,
   password: string,
