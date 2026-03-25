@@ -29,6 +29,33 @@ export async function createWorker(data: CreateWorkerBody, curatorId: string) {
 export async function updateWorker(id: string, data: UpdateWorkerBody) {
   const worker = await db.worker.update({ where: { id }, data, include: workerInclude })
   return formatWorker(worker)
+
+export async function listWorkers(opts: {
+  category?: string
+  page?: number
+  limit?: number
+}) {
+  const { category, page = 1, limit = 20 } = opts
+  return db.worker.findMany({
+    where: { isActive: true, ...(category ? { categoryId: category } : {}) },
+    skip: (page - 1) * limit,
+    take: limit,
+    include: { category: true },
+  })
+}
+
+export async function getWorker(id: string) {
+  const worker = await db.worker.findUnique({ where: { id }, include: { category: true } })
+  if (!worker) throw new AppError('Not found', 404)
+  return worker
+}
+
+export async function createWorker(data: Record<string, unknown>, curatorId: string) {
+  return db.worker.create({ data: { ...data, curatorId } as any })
+}
+
+export async function updateWorker(id: string, data: Record<string, unknown>) {
+  return db.worker.update({ where: { id }, data: data as any })
 }
 
 export async function deleteWorker(id: string) {
@@ -40,4 +67,5 @@ export async function toggleWorker(id: string) {
   if (!worker) throw new AppError('Not found', 404)
   const updated = await db.worker.update({ where: { id }, data: { isActive: !worker.isActive }, include: workerInclude })
   return formatWorker(updated)
+  return db.worker.update({ where: { id }, data: { isActive: !worker.isActive } })
 }
