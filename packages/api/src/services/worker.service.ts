@@ -29,6 +29,9 @@ export async function createWorker(data: CreateWorkerBody, curatorId: string) {
 export async function updateWorker(id: string, data: UpdateWorkerBody) {
   const worker = await db.worker.update({ where: { id }, data, include: workerInclude })
   return formatWorker(worker)
+import type { CreateWorkerBody, UpdateWorkerBody, WorkerQuery } from '../interfaces/index.js'
+
+export async function listWorkers({ category, page = 1, limit = 20 }: WorkerQuery & { page?: number; limit?: number }) {
 
 export async function listWorkers(opts: {
   category?: string
@@ -50,6 +53,12 @@ export async function getWorker(id: string) {
   return worker
 }
 
+export async function createWorker(data: CreateWorkerBody, curatorId: string) {
+  return db.worker.create({ data: { ...data, curatorId } })
+}
+
+export async function updateWorker(id: string, data: UpdateWorkerBody) {
+  return db.worker.update({ where: { id }, data })
 export async function createWorker(data: Record<string, unknown>, curatorId: string) {
   return db.worker.create({ data: { ...data, curatorId } as any })
 }

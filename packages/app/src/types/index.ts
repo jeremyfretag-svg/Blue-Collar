@@ -11,6 +11,7 @@ export interface Worker {
   avatar?: string | null;
   phone?: string | null;
   email?: string | null;
+  location?: string | null;
   isVerified: boolean;
   locationId?: string | null;
   category: Category;

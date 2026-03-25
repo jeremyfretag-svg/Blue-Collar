@@ -37,6 +37,7 @@ export async function registerUser({ email, password, firstName, lastName }: Reg
   return { data, token }
 }
 
+export async function registerUser({ email, password, firstName, lastName }: RegisterBody) {
 export async function registerUser(
   email: string,
   password: string,

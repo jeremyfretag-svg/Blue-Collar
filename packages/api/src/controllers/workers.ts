@@ -15,6 +15,21 @@ export async function listWorkers(req: Request<{}, {}, {}, WorkerQuery>, res: Re
   const { category, page = '1', limit = '20' } = req.query
   const workers = await workerService.listWorkers({
     category,
+    page: Number(page),
+    limit: Number(limit),
+
+function handleError(res: Response, err: unknown) {
+  if (err instanceof AppError) {
+    return res.status(err.statusCode).json({ status: 'error', message: err.message, code: err.statusCode })
+  }
+  console.error(err)
+  return res.status(500).json({ status: 'error', message: 'Internal server error', code: 500 })
+}
+
+export async function listWorkers(req: Request<{}, {}, {}, WorkerQuery>, res: Response) {
+  const { category, page = '1', limit = '20' } = req.query
+  const workers = await workerService.listWorkers({
+    category,
 export async function listWorkers(req: Request, res: Response) {
   const { category, page = '1', limit = '20' } = req.query
   const workers = await workerService.listWorkers({
@@ -25,12 +40,33 @@ import { db } from '../db.js'
 import { paginate } from '../utils/paginate.js'
 
 export async function listWorkers(req: Request, res: Response) {
+  const { category, search, city, state, country, page = '1', limit = '20' } = req.query
+
   const { category, page = '1', limit = '20' } = req.query
   const { data, meta } = await paginate({
     model: 'worker',
     where: {
       isActive: true,
       ...(category ? { categoryId: String(category) } : {}),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: String(search), mode: 'insensitive' } },
+              { bio: { contains: String(search), mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+      ...(city || state || country
+        ? {
+            location: {
+              ...(city ? { city: { contains: String(city), mode: 'insensitive' } } : {}),
+              ...(state ? { state: { contains: String(state), mode: 'insensitive' } } : {}),
+              ...(country ? { country: { contains: String(country), mode: 'insensitive' } } : {}),
+            },
+          }
+        : {}),
+    },
+    include: { category: true, location: true },
     },
     include: { category: true },
     page: Number(page),
