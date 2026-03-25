@@ -1,13 +1,25 @@
 import type { Request, Response } from 'express'
-import { db } from '../db.js'
+import { AppError } from '../services/AppError.js'
+import * as categoryService from '../services/category.service.js'
+
+function handleError(res: Response, err: unknown) {
+  if (err instanceof AppError) {
+    return res.status(err.statusCode).json({ status: 'error', message: err.message, code: err.statusCode })
+  }
+  console.error(err)
+  return res.status(500).json({ status: 'error', message: 'Internal server error', code: 500 })
+}
 
 export async function listCategories(_req: Request, res: Response) {
-  const categories = await db.category.findMany()
+  const categories = await categoryService.listCategories()
   return res.json({ data: categories, status: 'success', code: 200 })
 }
 
 export async function getCategory(req: Request, res: Response) {
-  const category = await db.category.findUnique({ where: { id: req.params.id } })
-  if (!category) return res.status(404).json({ status: 'error', message: 'Not found', code: 404 })
-  return res.json({ data: category, status: 'success', code: 200 })
+  try {
+    const category = await categoryService.getCategory(req.params.id)
+    return res.json({ data: category, status: 'success', code: 200 })
+  } catch (err) {
+    return handleError(res, err)
+  }
 }
