@@ -11,6 +11,10 @@ use soroban_sdk::{
 // Data types
 // =============================================================================
 
+// =============================================================================
+// Data types
+// =============================================================================
+
 #[contracttype]
 #[derive(Clone)]
 pub struct Worker {
@@ -57,10 +61,16 @@ impl RegistryContract {
     }
 
     // -------------------------------------------------------------------------
-    // Admin helpers
+    // Views
     // -------------------------------------------------------------------------
 
-    fn get_admin(env: &Env) -> Address {
+    /// Returns true if the contract has been initialized.
+    pub fn is_initialized(env: Env) -> bool {
+        env.storage().instance().has(&DataKey::Admin)
+    }
+
+    /// Get the admin address. Panics if not initialized.
+    pub fn get_admin(env: Env) -> Address {
         env.storage()
             .instance()
             .get(&DataKey::Admin)
@@ -162,19 +172,12 @@ impl RegistryContract {
         list.push_back(id.clone());
         env.storage().persistent().set(&DataKey::WorkerList, &list);
 
-        // topics: ("WrkReg", id, owner)  data: (curator, category)
-        env.events().publish(
-            (symbol_short!("WrkReg"), id, owner),
-            (curator, category),
-        );
+    /// Get a worker by id.
+    pub fn get_worker(env: Env, id: Symbol) -> Option<Worker> {
+        env.storage().persistent().get(&DataKey::Worker(id))
     }
 
-    // -------------------------------------------------------------------------
-    // Worker management
-    // -------------------------------------------------------------------------
-
-    /// Toggle a worker's active status (worker owner only).
-    /// Emits: WorkerToggled
+    /// Toggle a worker's active status (owner only).
     pub fn toggle(env: Env, id: Symbol, caller: Address) {
         caller.require_auth();
         let mut worker: Worker = env
