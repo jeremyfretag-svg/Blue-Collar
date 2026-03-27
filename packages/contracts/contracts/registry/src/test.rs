@@ -236,6 +236,18 @@ fn test_deregister_removes_worker_record() {
 
 #[test]
 fn test_deregister_removes_from_list() {
+// worker_count
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_worker_count_empty() {
+    let (env, contract) = setup();
+    let client = RegistryContractClient::new(&env, &contract);
+    assert_eq!(client.worker_count(), 0);
+}
+
+#[test]
+fn test_worker_count_after_registrations() {
     let (env, contract) = setup();
     let owner = Address::generate(&env);
     make_worker(&env, &contract, "w1", &owner);
@@ -288,6 +300,76 @@ fn test_deregister_nonexistent_worker_panics() {
 #[test]
 #[should_panic(expected = "Worker not found")]
 fn test_deregister_twice_panics() {
+    assert_eq!(client.worker_count(), 3);
+}
+
+// ---------------------------------------------------------------------------
+// list_workers_paginated
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_paginated_empty_list() {
+    let (env, contract) = setup();
+    let client = RegistryContractClient::new(&env, &contract);
+    let page = client.list_workers_paginated(&0, &10);
+    assert_eq!(page.len(), 0);
+}
+
+#[test]
+fn test_paginated_first_page() {
+    let (env, contract) = setup();
+    let owner = Address::generate(&env);
+    for id in ["w1", "w2", "w3", "w4", "w5"] {
+        make_worker(&env, &contract, id, &owner);
+    }
+    let client = RegistryContractClient::new(&env, &contract);
+    let page = client.list_workers_paginated(&0, &3);
+    assert_eq!(page.len(), 3);
+    assert_eq!(page.get(0).unwrap(), Symbol::new(&env, "w1"));
+    assert_eq!(page.get(1).unwrap(), Symbol::new(&env, "w2"));
+    assert_eq!(page.get(2).unwrap(), Symbol::new(&env, "w3"));
+}
+
+#[test]
+fn test_paginated_second_page() {
+    let (env, contract) = setup();
+    let owner = Address::generate(&env);
+    for id in ["w1", "w2", "w3", "w4", "w5"] {
+        make_worker(&env, &contract, id, &owner);
+    }
+    let client = RegistryContractClient::new(&env, &contract);
+    let page = client.list_workers_paginated(&3, &3);
+    assert_eq!(page.len(), 2); // only w4, w5 remain
+    assert_eq!(page.get(0).unwrap(), Symbol::new(&env, "w4"));
+    assert_eq!(page.get(1).unwrap(), Symbol::new(&env, "w5"));
+}
+
+#[test]
+fn test_paginated_offset_beyond_end_returns_empty() {
+    let (env, contract) = setup();
+    let owner = Address::generate(&env);
+    make_worker(&env, &contract, "w1", &owner);
+    make_worker(&env, &contract, "w2", &owner);
+
+    let client = RegistryContractClient::new(&env, &contract);
+    let page = client.list_workers_paginated(&10, &5);
+    assert_eq!(page.len(), 0);
+}
+
+#[test]
+fn test_paginated_limit_larger_than_list() {
+    let (env, contract) = setup();
+    let owner = Address::generate(&env);
+    make_worker(&env, &contract, "w1", &owner);
+    make_worker(&env, &contract, "w2", &owner);
+
+    let client = RegistryContractClient::new(&env, &contract);
+    let page = client.list_workers_paginated(&0, &100);
+    assert_eq!(page.len(), 2);
+}
+
+#[test]
+fn test_paginated_limit_zero_returns_empty() {
     let (env, contract) = setup();
     let owner = Address::generate(&env);
     make_worker(&env, &contract, "w1", &owner);
@@ -295,4 +377,34 @@ fn test_deregister_twice_panics() {
     let client = RegistryContractClient::new(&env, &contract);
     client.deregister(&Symbol::new(&env, "w1"), &owner);
     client.deregister(&Symbol::new(&env, "w1"), &owner);
+    let page = client.list_workers_paginated(&0, &0);
+    assert_eq!(page.len(), 0);
+}
+
+#[test]
+fn test_paginated_exact_fit() {
+    let (env, contract) = setup();
+    let owner = Address::generate(&env);
+    for id in ["w1", "w2", "w3"] {
+        make_worker(&env, &contract, id, &owner);
+    }
+    let client = RegistryContractClient::new(&env, &contract);
+    let page = client.list_workers_paginated(&0, &3);
+    assert_eq!(page.len(), 3);
+}
+
+#[test]
+fn test_paginated_single_item_pages() {
+    let (env, contract) = setup();
+    let owner = Address::generate(&env);
+    for id in ["w1", "w2", "w3"] {
+        make_worker(&env, &contract, id, &owner);
+    }
+    let client = RegistryContractClient::new(&env, &contract);
+
+    for (i, expected) in ["w1", "w2", "w3"].iter().enumerate() {
+        let page = client.list_workers_paginated(&(i as u32), &1);
+        assert_eq!(page.len(), 1);
+        assert_eq!(page.get(0).unwrap(), Symbol::new(&env, expected));
+    }
 }
