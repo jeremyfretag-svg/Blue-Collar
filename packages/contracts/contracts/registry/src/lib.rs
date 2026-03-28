@@ -310,32 +310,26 @@ impl RegistryContract {
             .unwrap_or(Vec::new(&env))
     }
 
-    /// Transfer ownership of a worker listing to a new address.
+    /// Permanently remove a worker from the registry (owner only).
     ///
-    /// Only the current owner may call this. Updates `worker.owner` and
-    /// `worker.wallet` to `new_owner`.
+    /// Deletes the worker record from persistent storage and removes the id
+    /// from WorkerList.
     ///
-    /// Emits: OwnXfer
-    pub fn transfer_ownership(env: Env, id: Symbol, current_owner: Address, new_owner: Address) {
-        current_owner.require_auth();
+    /// Emits: WrkDrg
+    pub fn deregister(env: Env, id: Symbol, caller: Address) {
+        caller.require_auth();
 
-        let mut worker: Worker = env
+        let worker: Worker = env
             .storage()
             .persistent()
             .get(&DataKey::Worker(id.clone()))
             .expect("Worker not found");
 
-        assert!(worker.owner == current_owner, "Not authorized");
+        assert!(worker.owner == caller, "Not authorized");
 
-        worker.owner = new_owner.clone();
-        worker.wallet = new_owner.clone();
-        env.storage().persistent().set(&DataKey::Worker(id.clone()), &worker);
+        env.storage().persistent().remove(&DataKey::Worker(id.clone()));
 
-        // topics: ("OwnXfer", id, current_owner)  data: new_owner
-        env.events().publish(
-            (symbol_short!("OwnXfer"), id, current_owner),
-            new_owner,
-        );
+        let mut list: Vec<Symbol> = env
     /// Return a page of worker ids starting at `offset`, up to `limit` items.
     ///
     /// - If `offset` >= total count, returns an empty vec.
@@ -369,6 +363,16 @@ impl RegistryContract {
             .persistent()
             .get(&DataKey::WorkerList)
             .unwrap_or(Vec::new(&env));
+        if let Some(pos) = list.iter().position(|x| x == id) {
+            list.remove(pos as u32);
+        }
+        env.storage().persistent().set(&DataKey::WorkerList, &list);
+
+        // topics: ("WrkDrg", id, caller)  data: ()
+        env.events().publish(
+            (symbol_short!("WrkDrg"), id, caller),
+            (),
+        );
         list.len()
     }
 

@@ -219,65 +219,23 @@ fn test_list_workers_after_toggle_still_listed() {
 }
 
 // ---------------------------------------------------------------------------
-// transfer_ownership
+// deregister
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_transfer_ownership_updates_owner() {
+fn test_deregister_removes_worker_record() {
     let (env, contract) = setup();
     let owner = Address::generate(&env);
-    let new_owner = Address::generate(&env);
     make_worker(&env, &contract, "w1", &owner);
 
     let client = RegistryContractClient::new(&env, &contract);
-    client.transfer_ownership(&Symbol::new(&env, "w1"), &owner, &new_owner);
+    client.deregister(&Symbol::new(&env, "w1"), &owner);
 
-    let worker = client.get_worker(&Symbol::new(&env, "w1")).unwrap();
-    assert_eq!(worker.owner, new_owner);
-    assert_eq!(worker.wallet, new_owner);
+    assert!(client.get_worker(&Symbol::new(&env, "w1")).is_none());
 }
 
 #[test]
-fn test_transfer_ownership_old_owner_loses_control() {
-    let (env, contract) = setup();
-    let owner = Address::generate(&env);
-    let new_owner = Address::generate(&env);
-    make_worker(&env, &contract, "w1", &owner);
-
-    let client = RegistryContractClient::new(&env, &contract);
-    client.transfer_ownership(&Symbol::new(&env, "w1"), &owner, &new_owner);
-
-    // new owner can toggle
-    client.toggle(&Symbol::new(&env, "w1"), &new_owner);
-    assert!(!client.get_worker(&Symbol::new(&env, "w1")).unwrap().is_active);
-}
-
-#[test]
-#[should_panic(expected = "Not authorized")]
-fn test_transfer_ownership_non_owner_panics() {
-    let (env, contract) = setup();
-    let owner = Address::generate(&env);
-    let stranger = Address::generate(&env);
-    let new_owner = Address::generate(&env);
-    make_worker(&env, &contract, "w1", &owner);
-
-    let client = RegistryContractClient::new(&env, &contract);
-    client.transfer_ownership(&Symbol::new(&env, "w1"), &stranger, &new_owner);
-}
-
-#[test]
-#[should_panic(expected = "Worker not found")]
-fn test_transfer_ownership_nonexistent_worker_panics() {
-    let (env, contract) = setup();
-    let owner = Address::generate(&env);
-    let new_owner = Address::generate(&env);
-
-    let client = RegistryContractClient::new(&env, &contract);
-    client.transfer_ownership(&Symbol::new(&env, "ghost"), &owner, &new_owner);
-}
-
-#[test]
-fn test_transfer_ownership_to_self_is_noop() {
+fn test_deregister_removes_from_list() {
 // worker_count
 // ---------------------------------------------------------------------------
 
@@ -297,6 +255,51 @@ fn test_worker_count_after_registrations() {
     make_worker(&env, &contract, "w3", &owner);
 
     let client = RegistryContractClient::new(&env, &contract);
+    client.deregister(&Symbol::new(&env, "w2"), &owner);
+
+    let list = client.list_workers();
+    assert_eq!(list.len(), 2);
+    assert_eq!(list.get(0).unwrap(), Symbol::new(&env, "w1"));
+    assert_eq!(list.get(1).unwrap(), Symbol::new(&env, "w3"));
+}
+
+#[test]
+fn test_deregister_last_worker_empties_list() {
+    let (env, contract) = setup();
+    let owner = Address::generate(&env);
+    make_worker(&env, &contract, "w1", &owner);
+
+    let client = RegistryContractClient::new(&env, &contract);
+    client.deregister(&Symbol::new(&env, "w1"), &owner);
+
+    assert_eq!(client.list_workers().len(), 0);
+}
+
+#[test]
+#[should_panic(expected = "Not authorized")]
+fn test_deregister_non_owner_panics() {
+    let (env, contract) = setup();
+    let owner = Address::generate(&env);
+    let stranger = Address::generate(&env);
+    make_worker(&env, &contract, "w1", &owner);
+
+    let client = RegistryContractClient::new(&env, &contract);
+    client.deregister(&Symbol::new(&env, "w1"), &stranger);
+}
+
+#[test]
+#[should_panic(expected = "Worker not found")]
+fn test_deregister_nonexistent_worker_panics() {
+    let (env, contract) = setup();
+    let caller = Address::generate(&env);
+
+    let client = RegistryContractClient::new(&env, &contract);
+    client.deregister(&Symbol::new(&env, "ghost"), &caller);
+}
+
+#[test]
+#[should_panic(expected = "Worker not found")]
+fn test_deregister_twice_panics() {
     assert_eq!(client.worker_count(), 3);
 }
 
@@ -372,24 +375,8 @@ fn test_paginated_limit_zero_returns_empty() {
     make_worker(&env, &contract, "w1", &owner);
 
     let client = RegistryContractClient::new(&env, &contract);
-    client.transfer_ownership(&Symbol::new(&env, "w1"), &owner, &owner);
-
-    assert_eq!(client.get_worker(&Symbol::new(&env, "w1")).unwrap().owner, owner);
-}
-
-#[test]
-fn test_transfer_ownership_twice() {
-    let (env, contract) = setup();
-    let owner = Address::generate(&env);
-    let second = Address::generate(&env);
-    let third = Address::generate(&env);
-    make_worker(&env, &contract, "w1", &owner);
-
-    let client = RegistryContractClient::new(&env, &contract);
-    client.transfer_ownership(&Symbol::new(&env, "w1"), &owner, &second);
-    client.transfer_ownership(&Symbol::new(&env, "w1"), &second, &third);
-
-    assert_eq!(client.get_worker(&Symbol::new(&env, "w1")).unwrap().owner, third);
+    client.deregister(&Symbol::new(&env, "w1"), &owner);
+    client.deregister(&Symbol::new(&env, "w1"), &owner);
     let page = client.list_workers_paginated(&0, &0);
     assert_eq!(page.len(), 0);
 }
