@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get("redirect") ?? "/workers";
   const { login } = useAuth();
   const [apiError, setApiError] = useState<string | null>(null);
 
@@ -28,7 +30,7 @@ export default function LoginPage() {
     try {
       const res = await authApi.login(data);
       login(res.data as AuthUser, res.token);
-      router.push("/workers");
+      router.push(redirect);
     } catch (err: unknown) {
       setApiError(err instanceof Error ? err.message : "Login failed");
     }

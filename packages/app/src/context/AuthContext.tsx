@@ -61,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((json) => {
         setUser(json.data as AuthUser);
         setToken(stored);
+        document.cookie = `${TOKEN_KEY}=${stored}; path=/; SameSite=Lax`;
       })
       .catch(() => {
         // Token is stale or invalid — clear it
@@ -71,12 +72,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback((user: AuthUser, token: string) => {
     localStorage.setItem(TOKEN_KEY, token);
+    document.cookie = `${TOKEN_KEY}=${token}; path=/; SameSite=Lax`;
     setUser(user);
     setToken(token);
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
+    document.cookie = `${TOKEN_KEY}=; path=/; max-age=0`;
     setUser(null);
     setToken(null);
   }, []);

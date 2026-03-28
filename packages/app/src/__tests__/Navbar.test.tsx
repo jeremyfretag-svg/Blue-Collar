@@ -32,6 +32,12 @@ vi.mock('lucide-react', () => ({
   Wallet: () => <span />,
   ChevronDown: () => <span />,
   User: () => <span />,
+  Sun: () => <span data-testid="sun-icon" />,
+  Moon: () => <span data-testid="moon-icon" />,
+}))
+
+vi.mock('next-themes', () => ({
+  useTheme: () => ({ resolvedTheme: 'light', setTheme: vi.fn() }),
 }))
 
 import { useAuth } from '@/hooks/useAuth'
