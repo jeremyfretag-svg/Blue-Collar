@@ -310,16 +310,20 @@ impl RegistryContract {
             .unwrap_or(Vec::new(&env))
     }
 
-    /// Permanently remove a worker from the registry (owner only).
+    /// Update a worker's name, category, and wallet address (owner only).
     ///
-    /// Deletes the worker record from persistent storage and removes the id
-    /// from WorkerList.
-    ///
-    /// Emits: WrkDrg
-    pub fn deregister(env: Env, id: Symbol, caller: Address) {
+    /// Emits: WrkUpd
+    pub fn update_worker(
+        env: Env,
+        id: Symbol,
+        caller: Address,
+        name: String,
+        category: Symbol,
+        wallet: Address,
+    ) {
         caller.require_auth();
 
-        let worker: Worker = env
+        let mut worker: Worker = env
             .storage()
             .persistent()
             .get(&DataKey::Worker(id.clone()))
@@ -327,9 +331,16 @@ impl RegistryContract {
 
         assert!(worker.owner == caller, "Not authorized");
 
-        env.storage().persistent().remove(&DataKey::Worker(id.clone()));
+        worker.name = name.clone();
+        worker.category = category.clone();
+        worker.wallet = wallet.clone();
+        env.storage().persistent().set(&DataKey::Worker(id.clone()), &worker);
 
-        let mut list: Vec<Symbol> = env
+        // topics: ("WrkUpd", id, caller)  data: (name, category, wallet)
+        env.events().publish(
+            (symbol_short!("WrkUpd"), id, caller),
+            (name, category, wallet),
+        );
     /// Return a page of worker ids starting at `offset`, up to `limit` items.
     ///
     /// - If `offset` >= total count, returns an empty vec.
