@@ -1,49 +1,71 @@
-import { db } from '../db.js'
+import { hash } from "argon2";
+import { db } from "../db.js";
 
 const categories = [
-  { name: 'Plumbing', description: 'Pipe fitting, repairs, and installations' },
-  { name: 'Electrical', description: 'Wiring, installations, and repairs' },
-  { name: 'Carpentry', description: 'Woodwork, furniture, and framing' },
-  { name: 'Welding', description: 'Metal fabrication and welding' },
-  { name: 'Painting', description: 'Interior and exterior painting' },
-  { name: 'Masonry', description: 'Brickwork, concrete, and stonework' },
-]
-
-const locations = [
-  { city: 'Lagos', state: 'Lagos', country: 'Nigeria', lat: 6.5244, lng: 3.3792 },
-  { city: 'Abuja', state: 'FCT', country: 'Nigeria', lat: 9.0765, lng: 7.3986 },
-  { city: 'Nairobi', state: 'Nairobi', country: 'Kenya', lat: -1.2921, lng: 36.8219 },
-  { city: 'Accra', state: 'Greater Accra', country: 'Ghana', lat: 5.6037, lng: -0.187 },
-]
-
-async function main() {
-  await db.category.createMany({ data: categories, skipDuplicates: true })
-  await db.location.createMany({ data: locations, skipDuplicates: true })
-  console.log('Seeded categories and locations.')
-import { hash } from 'argon2'
-import { db } from '../db.js'
-
-const categories = [
-  { name: 'Plumber', description: 'Pipe fitting, repairs, and water system installations', icon: '🔧' },
-  { name: 'Electrician', description: 'Wiring, electrical installations, and repairs', icon: '⚡' },
-  { name: 'Carpenter', description: 'Woodwork, furniture making, and framing', icon: '🪚' },
-  { name: 'Welder', description: 'Metal fabrication, welding, and structural work', icon: '🔩' },
-  { name: 'Mason', description: 'Brickwork, concrete, and stonework', icon: '🧱' },
-  { name: 'Painter', description: 'Interior and exterior painting and finishing', icon: '🎨' },
-  { name: 'Roofer', description: 'Roof installation, repair, and waterproofing', icon: '🏠' },
-  { name: 'HVAC Technician', description: 'Heating, ventilation, and air conditioning systems', icon: '❄️' },
-  { name: 'Landscaper', description: 'Garden design, lawn care, and outdoor maintenance', icon: '🌿' },
-  { name: 'General Contractor', description: 'Full-service construction and project management', icon: '🏗️' },
-]
+  {
+    name: "Plumber",
+    description: "Pipe fitting, repairs, and water system installations",
+    icon: "🔧",
+  },
+  {
+    name: "Electrician",
+    description: "Wiring, electrical installations, and repairs",
+    icon: "⚡",
+  },
+  {
+    name: "Carpenter",
+    description: "Woodwork, furniture making, and framing",
+    icon: "🪚",
+  },
+  {
+    name: "Welder",
+    description: "Metal fabrication, welding, and structural work",
+    icon: "🔩",
+  },
+  {
+    name: "Mason",
+    description: "Brickwork, concrete, and stonework",
+    icon: "🧱",
+  },
+  {
+    name: "Painter",
+    description: "Interior and exterior painting and finishing",
+    icon: "🎨",
+  },
+  {
+    name: "Roofer",
+    description: "Roof installation, repair, and waterproofing",
+    icon: "🏠",
+  },
+  {
+    name: "HVAC Technician",
+    description: "Heating, ventilation, and air conditioning systems",
+    icon: "❄️",
+  },
+  {
+    name: "Landscaper",
+    description: "Garden design, lawn care, and outdoor maintenance",
+    icon: "🌿",
+  },
+  {
+    name: "General Contractor",
+    description: "Full-service construction and project management",
+    icon: "🏗️",
+  },
+];
 
 // DEV ONLY — override via env vars in production
-const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'admin@bluecollar.dev'
-const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? 'Admin1234!'
-const CURATOR_EMAIL = process.env.SEED_CURATOR_EMAIL ?? 'curator@bluecollar.dev'
-const CURATOR_PASSWORD = process.env.SEED_CURATOR_PASSWORD ?? 'Curator1234!'
+const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@bluecollar.dev";
+const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "Admin1234!";
+const CURATOR_EMAIL =
+  process.env.SEED_CURATOR_EMAIL ?? "curator@bluecollar.dev";
+const CURATOR_PASSWORD = process.env.SEED_CURATOR_PASSWORD ?? "Curator1234!";
 
 async function seed() {
-  const [adminHash, curatorHash] = await Promise.all([hash(ADMIN_PASSWORD), hash(CURATOR_PASSWORD)])
+  const [adminHash, curatorHash] = await Promise.all([
+    hash(ADMIN_PASSWORD),
+    hash(CURATOR_PASSWORD),
+  ]);
 
   await db.$transaction([
     db.category.createMany({ data: categories, skipDuplicates: true }),
@@ -53,9 +75,9 @@ async function seed() {
       create: {
         email: ADMIN_EMAIL,
         password: adminHash,
-        firstName: 'Admin',
-        lastName: 'User',
-        role: 'admin',
+        firstName: "Admin",
+        lastName: "User",
+        role: "admin",
         verified: true,
       },
     }),
@@ -65,20 +87,20 @@ async function seed() {
       create: {
         email: CURATOR_EMAIL,
         password: curatorHash,
-        firstName: 'Curator',
-        lastName: 'User',
-        role: 'curator',
+        firstName: "Curator",
+        lastName: "User",
+        role: "curator",
         verified: true,
       },
     }),
-  ])
+  ]);
 
-  console.log('✅ Seeded categories, admin, and curator.')
-  console.log(`   Admin:   ${ADMIN_EMAIL}`)
-  console.log(`   Curator: ${CURATOR_EMAIL}`)
+  console.log("✅ Seeded categories, admin, and curator.");
+  console.log(`   Admin:   ${ADMIN_EMAIL}`);
+  console.log(`   Curator: ${CURATOR_EMAIL}`);
 }
 
-const reset = process.argv.includes('--reset')
+const reset = process.argv.includes("--reset");
 
 async function main() {
   if (reset) {
@@ -87,12 +109,15 @@ async function main() {
       db.user.deleteMany(),
       db.category.deleteMany(),
       db.location.deleteMany(),
-    ])
-    console.log('🗑️  Cleared all data.')
+    ]);
+    console.log("🗑️  Cleared all data.");
   }
-  await seed()
+  await seed();
 }
 
 main()
-  .catch((e) => { console.error(e); process.exit(1) })
-  .finally(() => db.$disconnect())
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(() => db.$disconnect());

@@ -7,43 +7,43 @@
  * verifying the controller propagates them correctly via handleError.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { NextFunction } from 'express'
-import { AppError } from '../../services/AppError.js'
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { NextFunction } from "express";
+import { AppError } from "../services/AppError.js";
 
 // ─── Env setup ────────────────────────────────────────────────────────────────
-process.env.JWT_SECRET = 'test-secret'
+process.env.JWT_SECRET = "test-secret";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
-vi.mock('../../services/worker.service.js', () => ({
+vi.mock("../services/worker.service.js", () => ({
   listWorkers: vi.fn(),
   getWorker: vi.fn(),
   createWorker: vi.fn(),
   updateWorker: vi.fn(),
   deleteWorker: vi.fn(),
   toggleWorker: vi.fn(),
-}))
+}));
 
-vi.mock('../../db.js', () => ({
+vi.mock("../db.js", () => ({
   db: {
     worker: { findMany: vi.fn(), count: vi.fn() },
   },
-}))
+}));
 
 // Pass workers through unchanged so tests assert on the raw mock data
-vi.mock('../../resources/index.js', () => ({
+vi.mock("../resources/index.js", () => ({
   WorkerResource: vi.fn((w: unknown) => w),
   WorkerCollection: vi.fn((ws: unknown[]) => ws),
-}))
+}));
 
-vi.mock('../../config/env.js', () => ({
-  env: { JWT_SECRET: 'test-secret', APP_URL: 'http://localhost:3000' },
-}))
+vi.mock("../config/env.js", () => ({
+  env: { JWT_SECRET: "test-secret", APP_URL: "http://localhost:3000" },
+}));
 
 // ─── Imports (after mocks) ────────────────────────────────────────────────────
 
-import * as workerService from '../../services/worker.service.js'
+import * as workerService from "../services/worker.service.js";
 import {
   listWorkers,
   showWorker,
@@ -51,361 +51,389 @@ import {
   updateWorker,
   deleteWorker,
   toggleActivation,
-} from '../../controllers/workers.js'
-import { authenticate, authorize } from '../../middleware/auth.js'
-import jwt from 'jsonwebtoken'
+} from "../controllers/workers.js";
+import { authenticate, authorize } from "../middleware/auth.js";
+import jwt from "jsonwebtoken";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeRes() {
-  const res: any = {}
-  res.status = vi.fn().mockReturnValue(res)
-  res.json = vi.fn().mockReturnValue(res)
-  res.send = vi.fn().mockReturnValue(res)
-  return res
+  const res: any = {};
+  res.status = vi.fn().mockReturnValue(res);
+  res.json = vi.fn().mockReturnValue(res);
+  res.send = vi.fn().mockReturnValue(res);
+  return res;
 }
 
 function makeNext(): NextFunction {
-  return vi.fn() as unknown as NextFunction
+  return vi.fn() as unknown as NextFunction;
 }
 
 function makeReq(overrides: Record<string, any> = {}): any {
-  return { body: {}, params: {}, query: {}, headers: {}, ...overrides }
+  return { body: {}, params: {}, query: {}, headers: {}, ...overrides };
 }
 
 const mockWorker = {
-  id: 'worker-1',
-  name: 'John Smith',
+  id: "worker-1",
+  name: "John Smith",
   bio: null,
   avatar: null,
-  phone: '555-0100',
+  phone: "555-0100",
   email: null,
   walletAddress: null,
   isActive: true,
   isVerified: false,
-  categoryId: 'cat-1',
-  curatorId: 'curator-1',
+  categoryId: "cat-1",
+  curatorId: "curator-1",
   locationId: null,
   createdAt: new Date(),
   updatedAt: new Date(),
-}
+};
 
 // ─── authenticate middleware ──────────────────────────────────────────────────
 
-describe('authenticate middleware', () => {
-  beforeEach(() => vi.clearAllMocks())
+describe("authenticate middleware", () => {
+  beforeEach(() => vi.clearAllMocks());
 
-  it('returns 401 when no Authorization header is provided', () => {
-    const req = makeReq({ headers: {} })
-    const res = makeRes()
-    const next = makeNext()
+  it("returns 401 when no Authorization header is provided", () => {
+    const req = makeReq({ headers: {} });
+    const res = makeRes();
+    const next = makeNext();
 
-    authenticate(req, res, next)
+    authenticate(req, res, next);
 
-    expect(res.status).toHaveBeenCalledWith(401)
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 401 }))
-    expect(next).not.toHaveBeenCalled()
-  })
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 401 }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
 
-  it('returns 401 for an invalid or tampered token', () => {
-    const req = makeReq({ headers: { authorization: 'Bearer not-a-real-token' } })
-    const res = makeRes()
-    const next = makeNext()
+  it("returns 401 for an invalid or tampered token", () => {
+    const req = makeReq({
+      headers: { authorization: "Bearer not-a-real-token" },
+    });
+    const res = makeRes();
+    const next = makeNext();
 
-    authenticate(req, res, next)
+    authenticate(req, res, next);
 
-    expect(res.status).toHaveBeenCalledWith(401)
-    expect(next).not.toHaveBeenCalled()
-  })
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
 
-  it('sets req.user and calls next() for a valid token', () => {
-    const token = jwt.sign({ id: 'curator-1', role: 'curator' }, 'test-secret')
-    const req = makeReq({ headers: { authorization: `Bearer ${token}` } })
-    const res = makeRes()
-    const next = makeNext()
+  it("sets req.user and calls next() for a valid token", () => {
+    const token = jwt.sign({ id: "curator-1", role: "curator" }, "test-secret");
+    const req = makeReq({ headers: { authorization: `Bearer ${token}` } });
+    const res = makeRes();
+    const next = makeNext();
 
-    authenticate(req, res, next)
+    authenticate(req, res, next);
 
-    expect(next).toHaveBeenCalledOnce()
-    expect(req.user).toMatchObject({ id: 'curator-1', role: 'curator' })
-  })
-})
+    expect(next).toHaveBeenCalledOnce();
+    expect(req.user).toMatchObject({ id: "curator-1", role: "curator" });
+  });
+});
 
 // ─── authorize middleware ─────────────────────────────────────────────────────
 
-describe('authorize middleware', () => {
-  beforeEach(() => vi.clearAllMocks())
+describe("authorize middleware", () => {
+  beforeEach(() => vi.clearAllMocks());
 
-  it('returns 403 when user role is not in the allowed list', () => {
-    const req = makeReq({ user: { id: 'user-1', role: 'user' } })
-    const res = makeRes()
-    const next = makeNext()
+  it("returns 403 when user role is not in the allowed list", () => {
+    const req = makeReq({ user: { id: "user-1", role: "user" } });
+    const res = makeRes();
+    const next = makeNext();
 
-    authorize('curator')(req, res, next)
+    authorize("curator")(req, res, next);
 
-    expect(res.status).toHaveBeenCalledWith(403)
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 403 }))
-    expect(next).not.toHaveBeenCalled()
-  })
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 403 }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
 
-  it('returns 403 when req.user is absent', () => {
-    const req = makeReq()
-    const res = makeRes()
-    const next = makeNext()
+  it("returns 403 when req.user is absent", () => {
+    const req = makeReq();
+    const res = makeRes();
+    const next = makeNext();
 
-    authorize('curator')(req, res, next)
+    authorize("curator")(req, res, next);
 
-    expect(res.status).toHaveBeenCalledWith(403)
-    expect(next).not.toHaveBeenCalled()
-  })
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
 
-  it('calls next() when user has a permitted role', () => {
-    const req = makeReq({ user: { id: 'curator-1', role: 'curator' } })
-    const res = makeRes()
-    const next = makeNext()
+  it("calls next() when user has a permitted role", () => {
+    const req = makeReq({ user: { id: "curator-1", role: "curator" } });
+    const res = makeRes();
+    const next = makeNext();
 
-    authorize('curator', 'admin')(req, res, next)
+    authorize("curator", "admin")(req, res, next);
 
-    expect(next).toHaveBeenCalledOnce()
-    expect(res.status).not.toHaveBeenCalled()
-  })
-})
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+});
 
 // ─── listWorkers ──────────────────────────────────────────────────────────────
 
-describe('listWorkers', () => {
-  beforeEach(() => vi.clearAllMocks())
+describe("listWorkers", () => {
+  beforeEach(() => vi.clearAllMocks());
 
-  it('returns paginated results with default params', async () => {
-    ;(workerService.listWorkers as any).mockResolvedValue({
+  it("returns paginated results with default params", async () => {
+    (workerService.listWorkers as any).mockResolvedValue({
       data: [mockWorker],
       meta: { total: 1, page: 1, limit: 20, pages: 1 },
-    })
-    const req = makeReq({ query: {} })
-    const res = makeRes()
+    });
+    const req = makeReq({ query: {} });
+    const res = makeRes();
 
-    await listWorkers(req, res)
+    await listWorkers(req, res);
 
     expect(workerService.listWorkers).toHaveBeenCalledWith(
       expect.objectContaining({ page: 1, limit: 20 }),
-    )
-    const body = res.json.mock.calls[0][0]
-    expect(body.status).toBe('success')
-    expect(body.code).toBe(200)
-    expect(body.meta.total).toBe(1)
-    expect(body.data).toHaveLength(1)
-  })
+    );
+    const body = res.json.mock.calls[0][0];
+    expect(body.status).toBe("success");
+    expect(body.code).toBe(200);
+    expect(body.meta.total).toBe(1);
+    expect(body.data).toHaveLength(1);
+  });
 
-  it('passes category filter to the service', async () => {
-    ;(workerService.listWorkers as any).mockResolvedValue({
+  it("passes category filter to the service", async () => {
+    (workerService.listWorkers as any).mockResolvedValue({
       data: [mockWorker],
       meta: { total: 1, page: 1, limit: 20, pages: 1 },
-    })
-    const req = makeReq({ query: { category: 'cat-1' } })
-    const res = makeRes()
+    });
+    const req = makeReq({ query: { category: "cat-1" } });
+    const res = makeRes();
 
-    await listWorkers(req, res)
+    await listWorkers(req, res);
 
     expect(workerService.listWorkers).toHaveBeenCalledWith(
-      expect.objectContaining({ category: 'cat-1' }),
-    )
-  })
+      expect.objectContaining({ category: "cat-1" }),
+    );
+  });
 
-  it('passes search term filter to the service', async () => {
-    ;(workerService.listWorkers as any).mockResolvedValue({
+  it("passes search term filter to the service", async () => {
+    (workerService.listWorkers as any).mockResolvedValue({
       data: [],
       meta: { total: 0, page: 1, limit: 20, pages: 0 },
-    })
-    const req = makeReq({ query: { search: 'plumber' } })
-    const res = makeRes()
+    });
+    const req = makeReq({ query: { search: "plumber" } });
+    const res = makeRes();
 
-    await listWorkers(req, res)
+    await listWorkers(req, res);
 
     expect(workerService.listWorkers).toHaveBeenCalledWith(
-      expect.objectContaining({ search: 'plumber' }),
-    )
-  })
-})
+      expect.objectContaining({ search: "plumber" }),
+    );
+  });
+});
 
 // ─── showWorker ───────────────────────────────────────────────────────────────
 
-describe('showWorker', () => {
-  beforeEach(() => vi.clearAllMocks())
+describe("showWorker", () => {
+  beforeEach(() => vi.clearAllMocks());
 
-  it('returns 200 with worker data when the worker exists', async () => {
-    ;(workerService.getWorker as any).mockResolvedValue(mockWorker)
-    const req = makeReq({ params: { id: 'worker-1' } })
-    const res = makeRes()
+  it("returns 200 with worker data when the worker exists", async () => {
+    (workerService.getWorker as any).mockResolvedValue(mockWorker);
+    const req = makeReq({ params: { id: "worker-1" } });
+    const res = makeRes();
 
-    await showWorker(req, res)
+    await showWorker(req, res);
 
-    const body = res.json.mock.calls[0][0]
-    expect(body.status).toBe('success')
-    expect(body.code).toBe(200)
-    expect(body.data).toBeDefined()
-    expect(workerService.getWorker).toHaveBeenCalledWith('worker-1')
-  })
+    const body = res.json.mock.calls[0][0];
+    expect(body.status).toBe("success");
+    expect(body.code).toBe(200);
+    expect(body.data).toBeDefined();
+    expect(workerService.getWorker).toHaveBeenCalledWith("worker-1");
+  });
 
-  it('returns 404 when the worker does not exist', async () => {
-    ;(workerService.getWorker as any).mockRejectedValue(new AppError('Not found', 404))
-    const req = makeReq({ params: { id: 'ghost-id' } })
-    const res = makeRes()
+  it("returns 404 when the worker does not exist", async () => {
+    (workerService.getWorker as any).mockRejectedValue(
+      new AppError("Not found", 404),
+    );
+    const req = makeReq({ params: { id: "ghost-id" } });
+    const res = makeRes();
 
-    await showWorker(req, res)
+    await showWorker(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(404)
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'error', code: 404 }))
-  })
-})
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "error", code: 404 }),
+    );
+  });
+});
 
 // ─── createWorker ─────────────────────────────────────────────────────────────
 
-describe('createWorker', () => {
-  beforeEach(() => vi.clearAllMocks())
+describe("createWorker", () => {
+  beforeEach(() => vi.clearAllMocks());
 
-  it('returns 201 with the new worker as an authorized curator', async () => {
-    ;(workerService.createWorker as any).mockResolvedValue(mockWorker)
+  it("returns 201 with the new worker as an authorized curator", async () => {
+    (workerService.createWorker as any).mockResolvedValue(mockWorker);
     const req = makeReq({
-      body: { name: 'John Smith', categoryId: 'cat-1', phone: '555-0100' },
-      user: { id: 'curator-1', role: 'curator' },
-    })
-    const res = makeRes()
+      body: { name: "John Smith", categoryId: "cat-1", phone: "555-0100" },
+      user: { id: "curator-1", role: "curator" },
+    });
+    const res = makeRes();
 
-    await createWorker(req, res)
+    await createWorker(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(201)
-    const body = res.json.mock.calls[0][0]
-    expect(body.status).toBe('success')
-    expect(body.code).toBe(201)
+    expect(res.status).toHaveBeenCalledWith(201);
+    const body = res.json.mock.calls[0][0];
+    expect(body.status).toBe("success");
+    expect(body.code).toBe(201);
     expect(workerService.createWorker).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'John Smith' }),
-      'curator-1',
-    )
-  })
-})
+      expect.objectContaining({ name: "John Smith" }),
+      "curator-1",
+    );
+  });
+});
 
 // ─── updateWorker ─────────────────────────────────────────────────────────────
 
-describe('updateWorker', () => {
-  beforeEach(() => vi.clearAllMocks())
+describe("updateWorker", () => {
+  beforeEach(() => vi.clearAllMocks());
 
-  it('returns 200 with updated worker data as the owner curator', async () => {
-    const updated = { ...mockWorker, name: 'Updated Name' }
-    ;(workerService.updateWorker as any).mockResolvedValue(updated)
+  it("returns 200 with updated worker data as the owner curator", async () => {
+    const updated = { ...mockWorker, name: "Updated Name" };
+    (workerService.updateWorker as any).mockResolvedValue(updated);
     const req = makeReq({
-      params: { id: 'worker-1' },
-      body: { name: 'Updated Name' },
-      user: { id: 'curator-1', role: 'curator' },
-    })
-    const res = makeRes()
+      params: { id: "worker-1" },
+      body: { name: "Updated Name" },
+      user: { id: "curator-1", role: "curator" },
+    });
+    const res = makeRes();
 
-    await updateWorker(req, res)
+    await updateWorker(req, res);
 
-    const body = res.json.mock.calls[0][0]
-    expect(body.status).toBe('success')
-    expect(body.code).toBe(200)
-    expect(workerService.updateWorker).toHaveBeenCalledWith('worker-1', { name: 'Updated Name' })
-  })
+    const body = res.json.mock.calls[0][0];
+    expect(body.status).toBe("success");
+    expect(body.code).toBe(200);
+    expect(workerService.updateWorker).toHaveBeenCalledWith("worker-1", {
+      name: "Updated Name",
+    });
+  });
 
-  it('returns 403 when the service rejects a non-owner curator', async () => {
-    ;(workerService.updateWorker as any).mockRejectedValue(new AppError('Forbidden', 403))
+  it("returns 403 when the service rejects a non-owner curator", async () => {
+    (workerService.updateWorker as any).mockRejectedValue(
+      new AppError("Forbidden", 403),
+    );
     const req = makeReq({
-      params: { id: 'worker-1' },
-      body: { name: 'Hijack' },
-      user: { id: 'other-curator', role: 'curator' },
-    })
-    const res = makeRes()
+      params: { id: "worker-1" },
+      body: { name: "Hijack" },
+      user: { id: "other-curator", role: "curator" },
+    });
+    const res = makeRes();
 
-    await updateWorker(req, res)
+    await updateWorker(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(403)
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'error', code: 403 }))
-  })
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "error", code: 403 }),
+    );
+  });
 
-  it('returns 404 when the worker does not exist', async () => {
-    ;(workerService.updateWorker as any).mockRejectedValue(new AppError('Not found', 404))
+  it("returns 404 when the worker does not exist", async () => {
+    (workerService.updateWorker as any).mockRejectedValue(
+      new AppError("Not found", 404),
+    );
     const req = makeReq({
-      params: { id: 'ghost-id' },
-      body: { name: 'Test' },
-      user: { id: 'curator-1', role: 'curator' },
-    })
-    const res = makeRes()
+      params: { id: "ghost-id" },
+      body: { name: "Test" },
+      user: { id: "curator-1", role: "curator" },
+    });
+    const res = makeRes();
 
-    await updateWorker(req, res)
+    await updateWorker(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(404)
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'error', code: 404 }))
-  })
-})
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "error", code: 404 }),
+    );
+  });
+});
 
 // ─── deleteWorker ─────────────────────────────────────────────────────────────
 
-describe('deleteWorker', () => {
-  beforeEach(() => vi.clearAllMocks())
+describe("deleteWorker", () => {
+  beforeEach(() => vi.clearAllMocks());
 
-  it('returns 204 when the owner curator deletes their worker', async () => {
-    ;(workerService.deleteWorker as any).mockResolvedValue(undefined)
+  it("returns 204 when the owner curator deletes their worker", async () => {
+    (workerService.deleteWorker as any).mockResolvedValue(undefined);
     const req = makeReq({
-      params: { id: 'worker-1' },
-      user: { id: 'curator-1', role: 'curator' },
-    })
-    const res = makeRes()
+      params: { id: "worker-1" },
+      user: { id: "curator-1", role: "curator" },
+    });
+    const res = makeRes();
 
-    await deleteWorker(req, res)
+    await deleteWorker(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(204)
-    expect(res.send).toHaveBeenCalled()
-    expect(workerService.deleteWorker).toHaveBeenCalledWith('worker-1')
-  })
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.send).toHaveBeenCalled();
+    expect(workerService.deleteWorker).toHaveBeenCalledWith("worker-1");
+  });
 
-  it('returns 403 when the service rejects a non-owner curator', async () => {
-    ;(workerService.deleteWorker as any).mockRejectedValue(new AppError('Forbidden', 403))
+  it("returns 403 when the service rejects a non-owner curator", async () => {
+    (workerService.deleteWorker as any).mockRejectedValue(
+      new AppError("Forbidden", 403),
+    );
     const req = makeReq({
-      params: { id: 'worker-1' },
-      user: { id: 'other-curator', role: 'curator' },
-    })
-    const res = makeRes()
+      params: { id: "worker-1" },
+      user: { id: "other-curator", role: "curator" },
+    });
+    const res = makeRes();
 
-    await deleteWorker(req, res)
+    await deleteWorker(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(403)
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'error', code: 403 }))
-  })
-})
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "error", code: 403 }),
+    );
+  });
+});
 
 // ─── toggleActivation ─────────────────────────────────────────────────────────
 
-describe('toggleActivation', () => {
-  beforeEach(() => vi.clearAllMocks())
+describe("toggleActivation", () => {
+  beforeEach(() => vi.clearAllMocks());
 
-  it('returns 200 with the toggled worker data on success', async () => {
-    const toggled = { ...mockWorker, isActive: false }
-    ;(workerService.toggleWorker as any).mockResolvedValue(toggled)
+  it("returns 200 with the toggled worker data on success", async () => {
+    const toggled = { ...mockWorker, isActive: false };
+    (workerService.toggleWorker as any).mockResolvedValue(toggled);
     const req = makeReq({
-      params: { id: 'worker-1' },
-      user: { id: 'curator-1', role: 'curator' },
-    })
-    const res = makeRes()
+      params: { id: "worker-1" },
+      user: { id: "curator-1", role: "curator" },
+    });
+    const res = makeRes();
 
-    await toggleActivation(req, res)
+    await toggleActivation(req, res);
 
-    const body = res.json.mock.calls[0][0]
-    expect(body.status).toBe('success')
-    expect(body.code).toBe(200)
-    expect(workerService.toggleWorker).toHaveBeenCalledWith('worker-1')
-  })
+    const body = res.json.mock.calls[0][0];
+    expect(body.status).toBe("success");
+    expect(body.code).toBe(200);
+    expect(workerService.toggleWorker).toHaveBeenCalledWith("worker-1");
+  });
 
-  it('returns 404 when the worker does not exist', async () => {
-    ;(workerService.toggleWorker as any).mockRejectedValue(new AppError('Not found', 404))
+  it("returns 404 when the worker does not exist", async () => {
+    (workerService.toggleWorker as any).mockRejectedValue(
+      new AppError("Not found", 404),
+    );
     const req = makeReq({
-      params: { id: 'ghost-id' },
-      user: { id: 'curator-1', role: 'curator' },
-    })
-    const res = makeRes()
+      params: { id: "ghost-id" },
+      user: { id: "curator-1", role: "curator" },
+    });
+    const res = makeRes();
 
-    await toggleActivation(req, res)
+    await toggleActivation(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(404)
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'error', code: 404 }))
-  })
-})
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "error", code: 404 }),
+    );
+  });
+});
