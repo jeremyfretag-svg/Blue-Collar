@@ -7,10 +7,17 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:api": "pnpm --filter @bluecollar/api dev",
-    "build:api": "pnpm --filter @bluecollar/api build",
-    "dev:app": "pnpm --filter @bluecollar/app dev",
-    "build:app": "pnpm --filter @bluecollar/app build"
+    "dev": "concurrently \"pnpm --filter @bluecollar/api dev\" \"pnpm --filter @bluecollar/app dev\"",
+    "build": "pnpm --filter @bluecollar/api build && pnpm --filter @bluecollar/app build",
+    "test": "pnpm --filter @bluecollar/api test && pnpm --filter @bluecollar/app test",
+    "lint": "pnpm --filter @bluecollar/api lint && pnpm --filter @bluecollar/app lint",
+    "format": "prettier --write \"packages/**/*.{ts,tsx,js,json,md}\"",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "prettier": "^3.5.3"
   },
   "license": "MIT"
 }

@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bluecollar
+      POSTGRES_PASSWORD: bluecollar
+      POSTGRES_DB: bluecollar
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://bluecollar:bluecollar@db:5432/bluecollar
+      NODE_ENV: production
+    env_file:
+      - packages/api/.env
+
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "8080:8080"
+
+volumes:
+  db_data:

@@ -313,6 +313,31 @@ stellar contract invoke \
 
 ---
 
+## Docker
+
+The quickest way to run the API and database locally is with Docker Compose.
+
+```bash
+# Copy and fill in the API env file first
+cp packages/api/.env.example packages/api/.env
+
+# Start API + PostgreSQL + Adminer
+pnpm docker:up
+
+# Stop and remove containers
+pnpm docker:down
+```
+
+| Service | URL |
+|---|---|
+| API | http://localhost:3000 |
+| Adminer (DB UI) | http://localhost:8080 |
+| PostgreSQL | localhost:5432 |
+
+> The API container runs `prisma migrate deploy` automatically on startup.
+
+---
+
 ## Getting Started
 
 ### Prerequisites

@@ -15,7 +15,9 @@
     "seed": "tsx src/database/seed.ts",
     "seed:reset": "tsx src/database/seed.ts --reset",
     "admin:create": "tsx src/commands/create-admin.ts",
-    "db:reset": "tsx src/commands/reset-db.ts"
+    "db:reset": "tsx src/commands/reset-db.ts",
+    "lint": "eslint \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\""
   },
   "prisma": {
     "seed": "tsx src/database/seed.ts"
@@ -62,6 +64,10 @@
     "typescript": "^5.4.0",
     "@types/supertest": "^6.0.0",
     "supertest": "^7.0.0",
-    "vitest": "^1.4.0"
+    "vitest": "^1.4.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.5.3"
   }
 }
