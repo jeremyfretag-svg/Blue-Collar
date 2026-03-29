@@ -8,6 +8,14 @@ import { sanitizeUser } from '../models/user.model.js'
 import { logger } from '../config/logger.js'
 import type { LoginBody, RegisterBody } from '../interfaces/index.js'
 
+/**
+ * Generate a short-lived email verification token for a user.
+ *
+ * Returns the raw JWT (sent in the email link), its SHA-256 hash (stored in the DB),
+ * and the expiry timestamp.
+ *
+ * @param userId - The user's database id.
+ */
 function generateVerificationToken(userId: string) {
   const raw = jwt.sign({ id: userId, purpose: 'email-verify' }, process.env.JWT_SECRET!, {
     expiresIn: '24h',
@@ -17,6 +25,15 @@ function generateVerificationToken(userId: string) {
   return { raw, hash, expiry }
 }
 
+/**
+ * Authenticate a user with email and password.
+ *
+ * @param email - The user's email address.
+ * @param password - The plaintext password to verify.
+ * @returns `{ data: SanitizedUser, token: string }` on success.
+ * @throws AppError 401 if credentials are invalid.
+ * @throws AppError 403 if the account has not been email-verified.
+ */
 export async function loginUser({ email, password }: LoginBody) {
   const user = await db.user.findUnique({ where: { email } })
   if (!user || !user.password || !(await argon2.verify(user.password, password))) {
@@ -32,6 +49,16 @@ export async function loginUser({ email, password }: LoginBody) {
   return { data: sanitizeUser(user), token }
 }
 
+/**
+ * Register a new user account and send a verification email.
+ *
+ * @param email - The desired email address (must be unique).
+ * @param password - The plaintext password (will be hashed with Argon2).
+ * @param firstName - User's first name.
+ * @param lastName - User's last name.
+ * @returns The sanitized (non-sensitive) user object.
+ * @throws AppError 409 if the email is already registered.
+ */
 export async function registerUser({ email, password, firstName, lastName }: RegisterBody) {
   const existing = await db.user.findUnique({ where: { email } })
   if (existing) throw new AppError('Email already in use', 409)
@@ -52,6 +79,16 @@ export async function registerUser({ email, password, firstName, lastName }: Reg
   return sanitizeUser(user)
 }
 
+/**
+ * Verify a user's email address using the raw JWT from the verification email.
+ *
+ * Compares the SHA-256 hash of the provided token against the stored hash and
+ * checks the expiry. Marks the account as verified on success.
+ *
+ * @param token - The raw JWT from the verification email link.
+ * @returns `true` if the account was just verified, `false` if it was already verified.
+ * @throws AppError 400 if the token is invalid, expired, or does not match.
+ */
 export async function verifyAccount(token: string): Promise<boolean> {
   let payload: { id?: string; purpose?: string }
   try {
@@ -83,6 +120,14 @@ export async function verifyAccount(token: string): Promise<boolean> {
   return true
 }
 
+/**
+ * Initiate a password reset flow by sending a reset email.
+ *
+ * Silently returns if no account exists for the given email (prevents enumeration).
+ * Stores a SHA-256 hash of the raw reset token in the database with a 1-hour expiry.
+ *
+ * @param email - The email address to send the reset link to.
+ */
 export async function requestPasswordReset(email: string) {
   const user = await db.user.findUnique({ where: { email } })
   if (!user) return
@@ -98,6 +143,16 @@ export async function requestPasswordReset(email: string) {
   )
 }
 
+/**
+ * Reset a user's password using the raw token from the reset email.
+ *
+ * Hashes the provided token, looks up the matching user, and updates the password.
+ * Clears the reset token fields on success.
+ *
+ * @param token - The raw reset token from the email link.
+ * @param password - The new plaintext password (will be hashed with Argon2).
+ * @throws AppError 400 if the token is invalid or has expired.
+ */
 export async function resetPassword(token: string, password: string) {
   const hash = crypto.createHash('sha256').update(token).digest('hex')
   const user = await db.user.findFirst({

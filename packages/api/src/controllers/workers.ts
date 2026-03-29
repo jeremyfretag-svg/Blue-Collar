@@ -5,6 +5,13 @@ import { db } from '../db.js'
 import { WorkerResource, WorkerCollection } from '../resources/index.js'
 import type { CreateWorkerBody, UpdateWorkerBody, WorkerQuery } from '../interfaces/index.js'
 
+/**
+ * GET /api/workers
+ * List active workers with optional filters and pagination.
+ *
+ * @param req - Query params: `category`, `page`, `limit`, `search`, `city`, `state`, `country`.
+ * @param res - JSON `{ data: Worker[], meta, status, code }`.
+ */
 export async function listWorkers(req: Request<{}, {}, {}, WorkerQuery>, res: Response) {
   try {
     const { category, page = '1', limit = '20', search, city, state, country } = req.query
@@ -28,6 +35,13 @@ export async function listWorkers(req: Request<{}, {}, {}, WorkerQuery>, res: Re
   }
 }
 
+/**
+ * GET /api/workers/:id
+ * Get a single worker by id.
+ *
+ * @param req - Route param `id`.
+ * @param res - JSON `{ data: Worker, status, code }` or 404.
+ */
 export async function showWorker(req: Request, res: Response) {
   try {
     const worker = await workerService.getWorker(req.params.id as string)
@@ -40,6 +54,13 @@ export async function showWorker(req: Request, res: Response) {
   }
 }
 
+/**
+ * POST /api/workers
+ * Create a new worker listing. Requires `curator` role.
+ *
+ * @param req - Body: `CreateWorkerBody`. `req.user` must be set by auth middleware.
+ * @param res - JSON `{ data: Worker, status, code: 201 }`.
+ */
 export async function createWorker(req: Request<{}, {}, CreateWorkerBody>, res: Response) {
   try {
     const worker = await workerService.createWorker(req.body, req.user!.id)
@@ -53,6 +74,13 @@ export async function createWorker(req: Request<{}, {}, CreateWorkerBody>, res: 
   }
 }
 
+/**
+ * PUT /api/workers/:id
+ * Update an existing worker listing. Requires `curator` role.
+ *
+ * @param req - Route param `id`. Body: `UpdateWorkerBody`.
+ * @param res - JSON `{ data: Worker, status, code }`.
+ */
 export async function updateWorker(req: Request<{ id: string }, {}, UpdateWorkerBody>, res: Response) {
   try {
     const worker = await workerService.updateWorker(req.params.id, req.body)
@@ -66,6 +94,13 @@ export async function updateWorker(req: Request<{ id: string }, {}, UpdateWorker
   }
 }
 
+/**
+ * DELETE /api/workers/:id
+ * Delete a worker listing. Requires `curator` role.
+ *
+ * @param req - Route param `id`.
+ * @param res - 204 No Content on success.
+ */
 export async function deleteWorker(req: Request, res: Response) {
   try {
     await workerService.deleteWorker(req.params.id as string)
@@ -75,6 +110,13 @@ export async function deleteWorker(req: Request, res: Response) {
   }
 }
 
+/**
+ * PATCH /api/workers/:id/toggle
+ * Toggle a worker's `isActive` status. Requires `curator` role.
+ *
+ * @param req - Route param `id`.
+ * @param res - JSON `{ data: Worker, status, code }`.
+ */
 export async function toggleActivation(req: Request, res: Response) {
   try {
     const updated = await workerService.toggleWorker(req.params.id as string)
@@ -88,6 +130,13 @@ export async function toggleActivation(req: Request, res: Response) {
   }
 }
 
+/**
+ * GET /api/workers/mine
+ * List workers created by the authenticated curator.
+ *
+ * @param req - Query params: `page`, `limit`. `req.user` must be set by auth middleware.
+ * @param res - JSON `{ data: Worker[], meta, status, code }`.
+ */
 export async function listMyWorkers(req: Request, res: Response) {
   const { page = '1', limit = '20' } = req.query
   const curatorId = req.user!.id

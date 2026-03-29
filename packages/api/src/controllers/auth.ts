@@ -15,6 +15,15 @@ import type {
   ResetPasswordBody,
 } from "../interfaces/index.js";
 
+/**
+ * POST /api/auth/login
+ * Authenticate a user with email and password.
+ *
+ * @param req - Body: `{ email, password }`.
+ * @param res - JSON `{ data: User, token, status, code: 202 }`.
+ * @throws AppError 401 if credentials are invalid.
+ * @throws AppError 403 if the account is not yet verified.
+ */
 export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
   try {
     const { data, token } = await authService.loginUser(req.body);
@@ -30,6 +39,14 @@ export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
   }
 }
 
+/**
+ * POST /api/auth/register
+ * Create a new user account and send a verification email.
+ *
+ * @param req - Body: `{ email, password, firstName, lastName }`.
+ * @param res - JSON `{ data: User, status, code: 201 }`.
+ * @throws AppError 409 if the email is already in use.
+ */
 export async function register(
   req: Request<{}, {}, RegisterBody>,
   res: Response,
@@ -48,6 +65,14 @@ export async function register(
   }
 }
 
+/**
+ * PUT /api/auth/verify-account
+ * Verify a user's email address using the token sent in the verification email.
+ *
+ * @param req - Query param or body field `token`.
+ * @param res - JSON `{ status, message, code: 200 }`.
+ * @throws AppError 400 if the token is missing, invalid, or expired.
+ */
 export const verifyAccount = catchAsync(async (req: Request, res: Response) => {
   const token = (req.query.token ?? req.body.token) as string | undefined;
   if (!token) {
@@ -64,6 +89,14 @@ export const verifyAccount = catchAsync(async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /api/auth/google/callback
+ * Handle the Google OAuth callback. Issues a JWT and redirects to the frontend.
+ *
+ * @param req - `req.user` is populated by Passport's Google strategy.
+ * @param res - Redirects to `APP_URL/auth-callback?token=<jwt>` on success,
+ *              or `APP_URL/login?error=oauth-failed` on failure.
+ */
 export async function googleAuthCallback(req: Request, res: Response) {
   const user = req.user as any;
   if (!user) return res.redirect(`${env.APP_URL}/login?error=oauth-failed`);
@@ -73,12 +106,27 @@ export async function googleAuthCallback(req: Request, res: Response) {
   return res.redirect(`${env.APP_URL}/auth-callback?token=${token}`);
 }
 
+/**
+ * DELETE /api/auth/logout
+ * Stateless logout — instructs the client to discard its JWT.
+ *
+ * @param _req - Unused.
+ * @param res - JSON `{ status, message, code: 200 }`.
+ */
 export async function logout(_req: Request, res: Response) {
   return res
     .status(200)
     .json({ status: "success", message: "Logged out", code: 200 });
 }
 
+/**
+ * GET /api/auth/me
+ * Return the currently authenticated user's profile.
+ *
+ * @param req - `req.user` must be set by the `authenticate` middleware.
+ * @param res - JSON `{ data: User, status, code: 200 }`.
+ * @throws 404 if the user record no longer exists.
+ */
 export async function me(req: Request, res: Response) {
   try {
     const { id } = req.user!;
@@ -95,6 +143,13 @@ export async function me(req: Request, res: Response) {
   }
 }
 
+/**
+ * POST /api/auth/forgot-password
+ * Send a password reset email. Always returns 200 to prevent email enumeration.
+ *
+ * @param req - Body: `{ email }`.
+ * @param res - JSON `{ status, message, code: 200 }`.
+ */
 export async function forgotPassword(
   req: Request<{}, {}, ForgotPasswordBody>,
   res: Response,
@@ -112,6 +167,14 @@ export async function forgotPassword(
   }
 }
 
+/**
+ * PUT /api/auth/reset-password
+ * Reset a user's password using the token from the reset email.
+ *
+ * @param req - Body: `{ token, password }`.
+ * @param res - JSON `{ status, message, code: 200 }`.
+ * @throws AppError 400 if `token` or `password` is missing, or if the token is invalid/expired.
+ */
 export async function resetPassword(
   req: Request<{}, {}, ResetPasswordBody>,
   res: Response,

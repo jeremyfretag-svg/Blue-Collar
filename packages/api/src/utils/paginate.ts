@@ -11,14 +11,33 @@ export type PaginationMeta = {
 
 type PaginateArgs = {
   model: 'worker' | 'user'
-  where?: object
-  include?: object
   where?: Record<string, unknown>
   include?: Record<string, unknown>
   page: number
   limit: number
 }
 
+/**
+ * Generic pagination helper for Prisma models.
+ *
+ * Executes a `findMany` and `count` in a single transaction and returns
+ * the data alongside computed pagination metadata.
+ *
+ * @param args.model - The Prisma model name to query (`'worker'` or `'user'`).
+ * @param args.where - Optional Prisma `where` filter.
+ * @param args.include - Optional Prisma `include` clause.
+ * @param args.page - Current page number (1-based).
+ * @param args.limit - Number of records per page.
+ * @returns `{ data, meta }` where `meta` includes totals and navigation flags.
+ *
+ * @example
+ * const { data, meta } = await paginate<Worker>({
+ *   model: 'worker',
+ *   where: { isActive: true },
+ *   page: 1,
+ *   limit: 20,
+ * })
+ */
 export async function paginate<T>({
   model,
   where,
