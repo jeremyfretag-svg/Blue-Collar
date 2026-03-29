@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { BadgeCheck, MapPin } from "lucide-react";
 import type { Worker } from "@/types";
+import BookmarkButton from "./BookmarkButton";
+import StarRating from "./StarRating";
 
 export default function WorkerCard({ worker }: { worker: Worker }) {
   const initials = worker.name
@@ -29,7 +31,7 @@ export default function WorkerCard({ worker }: { worker: Worker }) {
           </div>
         )}
 
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 font-semibold text-gray-800 truncate">
             <span className="truncate">{worker.name}</span>
             {worker.isVerified && (
@@ -42,7 +44,20 @@ export default function WorkerCard({ worker }: { worker: Worker }) {
             {worker.category.name}
           </span>
         </div>
+
+        {/* Bookmark */}
+        <BookmarkButton workerId={worker.id} />
       </div>
+
+      {/* Rating */}
+      {worker.averageRating != null && (
+        <div className="flex items-center gap-1.5">
+          <StarRating rating={worker.averageRating} />
+          <span className="text-xs text-gray-400">
+            {worker.averageRating.toFixed(1)} ({worker.reviewCount})
+          </span>
+        </div>
+      )}
 
       {/* Bio */}
       {worker.bio && (

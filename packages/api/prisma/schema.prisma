@@ -42,6 +42,8 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   workers       Worker[]
+  bookmarks     Bookmark[]
+  reviews       Review[]
 }
 
 model Category {
@@ -55,23 +57,49 @@ model Category {
 }
 
 model Worker {
-  id            String   @id @default(cuid())
+  id            String     @id @default(cuid())
   name          String
   bio           String?
   avatar        String?
   phone         String?
   email         String?
   walletAddress String?
-  isActive      Boolean  @default(true)
-  isVerified    Boolean  @default(false)
+  isActive      Boolean    @default(true)
+  isVerified    Boolean    @default(false)
   categoryId    String
-  category      Category @relation(fields: [categoryId], references: [id])
+  category      Category   @relation(fields: [categoryId], references: [id])
   curatorId     String
-  curator       User     @relation(fields: [curatorId], references: [id])
+  curator       User       @relation(fields: [curatorId], references: [id])
   locationId    String?
-  location      Location? @relation(fields: [locationId], references: [id])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  location      Location?  @relation(fields: [locationId], references: [id])
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  bookmarks     Bookmark[]
+  reviews       Review[]
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  workerId  String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workerId])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int
+  comment   String?
+  workerId  String
+  authorId  String
+  createdAt DateTime @default(now())
+  worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([authorId, workerId])
 }
 
 enum Role {

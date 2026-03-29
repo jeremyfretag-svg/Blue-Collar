@@ -8,6 +8,7 @@ import authRoutes from './routes/auth.js'
 import categoryRoutes from './routes/categories.js'
 import workerRoutes from './routes/workers.js'
 import adminRoutes from './routes/admin.js'
+import userRoutes from './routes/users.js'
 
 const app = express()
 
@@ -22,6 +23,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/categories', categoryRoutes)
 app.use('/api/workers', workerRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/users', userRoutes)
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'bluecollar-api' })

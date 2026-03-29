@@ -4,7 +4,7 @@
  * clearing auth state and redirecting to /auth/login.
  */
 
-import type { Worker, Category, ApiResponse, Meta } from "@/types";
+import type { Worker, Category, ApiResponse, Meta, Review } from "@/types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
 const TOKEN_KEY = "bc_token";
@@ -106,6 +106,26 @@ export const deleteWorker = (id: string) =>
 
 export const toggleWorker = (id: string) =>
   request<ApiResponse<Worker>>(`/workers/${id}/toggle`, { method: "PATCH" });
+
+// Bookmarks
+export const toggleBookmark = (workerId: string) =>
+  request<ApiResponse<{ bookmarked: boolean }>>(`/workers/${workerId}/bookmark`, { method: "POST" });
+
+export const getMyBookmarks = (params?: Record<string, string>) => {
+  const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+  return request<ApiResponse<Worker[]> & { meta: Meta }>(`/users/me/bookmarks${qs}`);
+};
+
+// Reviews
+export const getWorkerReviews = (workerId: string, params?: Record<string, string>) => {
+  const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+  return request<ApiResponse<Review[]> & { meta: Meta; averageRating: number | null; reviewCount: number }>(
+    `/workers/${workerId}/reviews${qs}`
+  );
+};
+
+export const createReview = (workerId: string, data: { rating: number; comment?: string }) =>
+  request<ApiResponse<Review>>(`/workers/${workerId}/reviews`, { method: "POST", body: data });
 
 // Categories
 export const getCategories = () =>

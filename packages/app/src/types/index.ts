@@ -16,6 +16,23 @@ export interface Worker {
   locationId?: string | null;
   walletAddress?: string | null;
   category: Category;
+  averageRating?: number | null;
+  reviewCount?: number;
+}
+
+export interface Review {
+  id: string;
+  rating: number;
+  comment?: string | null;
+  workerId: string;
+  authorId: string;
+  createdAt: string;
+  author: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    avatar?: string | null;
+  };
 }
 
 export interface Meta {
