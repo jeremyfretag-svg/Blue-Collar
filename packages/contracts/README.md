@@ -652,6 +652,48 @@ let contact_hash  = Sha256::digest(b"[email]");
 
 ---
 
+## Security Considerations
+
+### Authentication & Authorisation
+
+- All mutating functions call `require_auth()` on the relevant address before executing. Soroban enforces this at the VM level — no auth, no execution.
+- Admin-only functions additionally assert that the caller matches the stored admin address. Passing a different address as `admin` will panic even if `require_auth()` passes.
+- Curator-gated registration checks the curators list on every call — there is no cached session or token that can be replayed.
+
+### PII & Privacy
+
+- No personally identifiable information is stored on-chain. `location_hash` and `contact_hash` are SHA-256 digests. The pre-image is never written to the ledger.
+- SHA-256 is a one-way function; on-chain data cannot be reversed to recover a worker's city, email, or phone number.
+- The off-chain API is responsible for computing and validating hashes before invoking `register` or `update`.
+
+### Escrow Safety
+
+- Funds are held by the contract address, not by any EOA. Only `release_escrow` and `cancel_escrow` can move them out.
+- `cancel_escrow` is time-locked: the payer cannot cancel before `expiry`, preventing griefing of workers mid-job.
+- Both `release_escrow` and `cancel_escrow` set a terminal flag (`released` / `cancelled`) before emitting events, preventing re-entrancy via double-spend.
+- Duplicate escrow IDs are rejected — callers must use unique IDs per job.
+
+### Fee Cap
+
+- The protocol fee is hard-capped at 500 bps (5%) in the contract source. `initialize` and `update_fee` both panic if `fee_bps > MAX_FEE_BPS`. This cannot be bypassed by an admin.
+
+### Upgradability
+
+- Both contracts implement an `upgrade` function that replaces the WASM in-place via `env.deployer().update_current_contract_wasm()`. This preserves the contract ID and all persistent storage.
+- Upgrades require the admin's signature (`require_auth()` + address check). Compromising the admin key is the primary upgrade risk — protect it with a hardware wallet or multisig.
+- After upgrading, verify the new WASM hash matches the installed hash before invoking any functions.
+
+### Storage TTL
+
+- Persistent storage entries expire if their TTL reaches zero. Every write automatically extends TTL to ~1 year (535,000 ledgers). The public `extend_worker_ttl` function allows anyone to refresh a specific entry without special permissions.
+- Monitor worker entries approaching the TTL threshold (~6 months) and trigger extensions proactively.
+
+### Symbol Length
+
+- Soroban's `symbol_short!` macro requires symbols ≤ 9 characters. All event topic keys in these contracts comply. Worker `id` and `category` values passed by callers must also respect this limit — the contract will panic at the SDK level if exceeded.
+
+---
+
 ## Notes
 
 - All `Symbol` topic keys are ≤ 9 characters to satisfy Soroban's `symbol_short!` constraint.
