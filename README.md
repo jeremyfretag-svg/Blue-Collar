@@ -2,6 +2,12 @@
 
 > Find Skilled Workers Near You
 
+[![CI](https://github.com/Fidelis900/Blue-Collar/actions/workflows/ci.yml/badge.svg)](https://github.com/Fidelis900/Blue-Collar/actions/workflows/ci.yml)
+[![API Tests](https://github.com/Fidelis900/Blue-Collar/actions/workflows/api-tests.yml/badge.svg)](https://github.com/Fidelis900/Blue-Collar/actions/workflows/api-tests.yml)
+[![Node Version](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
+[![pnpm Version](https://img.shields.io/badge/pnpm-%3E%3D9-orange)](https://pnpm.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./packages/api/LICENSE)
+
 BlueCollar is a **decentralised protocol built on [Stellar](https://stellar.org)** that connects local skilled workers (plumbers, electricians, carpenters, welders, and more) with users through community-curated listings. The platform creates a trustless ecosystem where workers can be discovered, verified, and compensated securely — without relying on centralised intermediaries.
 
 Many skilled workers lack a platform to help them get noticed. Meanwhile, countless people need quality recommendations for reliable tradespeople. BlueCollar is the bridge connecting both worlds.
@@ -21,6 +27,8 @@ Many skilled workers lack a platform to help them get noticed. Meanwhile, countl
 - [Smart Contracts](#smart-contracts)
 - [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
+- [Roadmap](#roadmap)
+- [Community](#community)
 - [Contributing](#contributing)
 - [License](#license)
 - [Quick Start Guide](packages/api/QUICK_START_GUIDE.md)
@@ -352,8 +360,8 @@ pnpm docker:down
 ### Install
 
 ```bash
-git clone https://github.com/your-org/bluecollar.git
-cd bluecollar
+git clone https://github.com/Fidelis900/Blue-Collar.git
+cd Blue-Collar
 pnpm install
 ```
 
@@ -397,13 +405,45 @@ All variables for the API live in `packages/api/.env` (copy from `.env.example`)
 
 ---
 
+## Roadmap
+
+| Status | Feature |
+|---|---|
+| ✅ Done | Worker CRUD with curator-gated listings |
+| ✅ Done | JWT auth + email verification + password reset |
+| ✅ Done | Google OAuth 2.0 |
+| ✅ Done | Registry & Market Soroban contracts (testnet) |
+| ✅ Done | Escrow payments with time-locked cancellation |
+| ✅ Done | Role-based access (user / curator / admin) |
+| ✅ Done | Profile image uploads (Multer + Sharp) |
+| 🔄 In progress | Next.js frontend (worker discovery, wallet connect) |
+| 🔄 In progress | Freighter wallet integration |
+| 📋 Planned | Mainnet deployment |
+| 📋 Planned | Worker reviews & ratings |
+| 📋 Planned | Push notifications |
+| 📋 Planned | Mobile app (React Native) |
+
+---
+
+## Community
+
+Join the conversation and stay up to date:
+
+- **Telegram:** [t.me/bluecollar](https://t.me/bluecollar)
+- **GitHub Discussions:** [github.com/Fidelis900/Blue-Collar/discussions](https://github.com/Fidelis900/Blue-Collar/discussions)
+- **Issues:** [github.com/Fidelis900/Blue-Collar/issues](https://github.com/Fidelis900/Blue-Collar/issues)
+
+---
+
 ## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide, including commit message conventions and PR process.
 
 1. Check the open issues for something to work on
 2. Fork the repo and create a feature branch
 3. Make your changes and open a pull request
 
-Please follow the existing code style. All PRs require passing CI checks.
+All PRs require passing CI checks.
 
 ---
 

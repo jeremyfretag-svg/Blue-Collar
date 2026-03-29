@@ -1,82 +1,145 @@
 # Contributing to BlueCollar
 
-Thanks for your interest in contributing! Please read this guide before opening issues or pull requests.
+Thanks for your interest in contributing! This guide covers everything you need to get started.
 
-## Code of Conduct
+---
 
-This project follows the [Contributor Covenant Code of Conduct](./CODE_OF_CONDUCT.md). By participating, you agree to uphold it. Report violations to conduct@bluecollar.dev.
+## Table of Contents
 
-## How to Contribute
+- [Getting Started](#getting-started)
+- [Commit Message Convention](#commit-message-convention)
+- [Branch Naming](#branch-naming)
+- [Pull Request Process](#pull-request-process)
+- [Code Style](#code-style)
+- [Running Tests](#running-tests)
 
-1. Check [open issues](https://github.com/Blue-Kollar/Blue-Collar/issues) for something to work on, or open a new one to discuss your idea first.
-2. Fork the repo and create a feature branch:
+---
+
+## Getting Started
+
+1. Fork the repository and clone your fork:
    ```bash
-   git checkout -b feat/your-feature
+   git clone https://github.com/<your-username>/Blue-Collar.git
+   cd Blue-Collar
+   pnpm install
    ```
-3. Make your changes following the guidelines below.
-4. Open a pull request against `main` with a clear description.
 
-## Development Setup
+2. Create a feature branch (see [Branch Naming](#branch-naming)).
 
-**Prerequisites:** Node.js >= 20, pnpm >= 9, PostgreSQL, Rust (for contracts)
+3. Make your changes, commit using the [convention below](#commit-message-convention), and open a PR.
 
-```bash
-git clone https://github.com/Blue-Kollar/Blue-Collar.git
-cd Blue-Collar
-pnpm install
-```
-
-**API:**
-```bash
-cp packages/api/.env.example packages/api/.env
-# fill in DATABASE_URL and JWT_SECRET
-cd packages/api
-pnpm migrate
-pnpm seed
-pnpm dev        # :3000
-```
-
-**App:**
-```bash
-cd packages/app
-pnpm dev        # :3001
-```
-
-**Contracts:**
-```bash
-rustup target add wasm32-unknown-unknown
-cargo install --locked stellar-cli
-cd packages/contracts
-cargo build --release --target wasm32-unknown-unknown
-```
+---
 
 ## Commit Message Convention
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/):
+This project uses **Conventional Commits** to power automated changelog generation via [release-please](https://github.com/googleapis/release-please).
+
+### Format
 
 ```
-<type>(optional scope): <short description>
+<type>(<scope>): <short description>
 
 [optional body]
+
+[optional footer(s)]
 ```
 
-Common types: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci`
+### Types
+
+| Type       | When to use                                              |
+| ---------- | -------------------------------------------------------- |
+| `feat`     | A new feature                                            |
+| `fix`      | A bug fix                                                |
+| `docs`     | Documentation changes only                              |
+| `refactor` | Code change that neither fixes a bug nor adds a feature  |
+| `test`     | Adding or updating tests                                 |
+| `chore`    | Build process, dependency updates, tooling               |
+| `ci`       | CI/CD configuration changes                              |
+| `perf`     | Performance improvements                                 |
+
+### Scopes (optional but encouraged)
+
+`api`, `app`, `contracts`, `deps`, `ci`, `docs`
+
+### Examples
+
+```
+feat(api): add Google OAuth 2.0 login
+fix(api): return 409 on duplicate email registration
+docs(contracts): add full interface documentation
+chore(deps): bump prisma to 7.2.0
+test(api): add edge cases for worker toggle endpoint
+refactor(api): extract payment logic into service layer
+ci: add release-please workflow
+```
+
+### Breaking Changes
+
+Append `!` after the type/scope, or add `BREAKING CHANGE:` in the footer:
+
+```
+feat(api)!: rename /workers/mine to /workers/curator
+
+BREAKING CHANGE: clients must update the endpoint path.
+```
+
+---
+
+## Branch Naming
+
+```
+<type>/<short-description>
+```
 
 Examples:
+- `feat/google-oauth`
+- `fix/worker-toggle-auth`
+- `docs/contracts-readme`
+- `chore/bump-prisma`
+
+---
+
+## Pull Request Process
+
+1. Ensure all CI checks pass (`pnpm test`, `pnpm build`, `cargo clippy`).
+2. Write a clear PR title following the commit convention (release-please uses it).
+3. Reference the related issue: `Closes #123`.
+4. Request a review from a maintainer.
+5. Squash-merge is preferred to keep history clean.
+
+---
+
+## Code Style
+
+### API (TypeScript)
+
+- 2-space indent, double quotes
+- Run `pnpm build` to catch type errors before pushing
+- Run `pnpm test` to ensure no regressions
+
+### Contracts (Rust)
+
+- Run `make fmt` before committing
+- Run `make clippy` — zero warnings policy
+
+### App (Next.js)
+
+See [packages/app/CONTRIBUTING.md](./packages/app/CONTRIBUTING.md) for frontend-specific conventions.
+
+---
+
+## Running Tests
+
+```bash
+# API tests
+cd packages/api
+pnpm test
+
+# Contract tests
+cd packages/contracts
+cargo test
+
+# App
+cd packages/app
+pnpm test
 ```
-feat(api): add pagination to workers endpoint
-fix(contracts): correct TTL threshold constant
-docs: update environment variables table
-chore(deps): bump prisma to 5.x
-```
-
-## Review Process
-
-- All PRs require at least one approving review from a maintainer.
-- CI checks (lint, type-check, tests) must pass before merge.
-- Keep PRs focused — one concern per PR makes review faster.
-- Maintainers may request changes; address feedback and re-request review.
-
-## Package-Specific Guides
-
-- [App (Next.js)](./packages/app/CONTRIBUTING.md)
