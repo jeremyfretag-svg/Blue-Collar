@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { BadgeCheck, MapPin, Mail, Phone, ArrowLeft, QrCode } from "lucide-react";
+import { BadgeCheck, MapPin, Mail, Phone, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import TipModal from "@/components/TipModal";
 import TransactionHistory from "@/components/TransactionHistory";
@@ -9,6 +9,7 @@ import StarRating from "@/components/StarRating";
 import ReviewCard from "@/components/ReviewCard";
 import ReviewForm from "@/components/ReviewForm";
 import QRCodeButton from "@/components/QRCodeButton";
+import ZoomableAvatar from "@/components/ZoomableAvatar";
 import type { Worker, ApiResponse, Review } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
@@ -79,10 +80,10 @@ export default async function WorkerProfilePage({
         {/* Avatar + name */}
         <div className="flex items-start gap-5">
           {worker.avatar ? (
-            <img
+            <ZoomableAvatar
               src={worker.avatar}
               alt={worker.name}
-              className="h-20 w-20 rounded-full object-cover ring-2 ring-blue-100"
+              className="h-20 w-20 rounded-full object-cover ring-2 ring-blue-100 cursor-zoom-in"
             />
           ) : (
             <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold text-2xl">
