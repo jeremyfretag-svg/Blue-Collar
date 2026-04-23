@@ -1,0 +1,102 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bluecollar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-bluecollar}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-bluecollar} -d ${POSTGRES_DB:-bluecollar}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - packages/api/.env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bluecollar}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-bluecollar}
+    expose:
+      - '3000'
+    command: ['sh', '-c', 'npx prisma migrate deploy && node dist/index.js']
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+    networks:
+      - internal
+
+  app:
+    image: node:20-alpine
+    working_dir: /workspace/packages/app
+    restart: unless-stopped
+    depends_on:
+      - api
+    env_file:
+      - packages/app/.env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+    volumes:
+      - ./:/workspace
+    command:
+      [
+        'sh',
+        '-c',
+        'corepack enable && pnpm install --frozen-lockfile && pnpm build && pnpm start -p 3001',
+      ]
+    expose:
+      - '3001'
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - app
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/nginx/bluecollar.conf.example:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/certs:/etc/letsencrypt:ro
+      - ./deploy/www:/var/www/certbot:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+    networks:
+      - internal
+
+volumes:
+  db_data:
+
+networks:
+  internal:
+    driver: bridge
