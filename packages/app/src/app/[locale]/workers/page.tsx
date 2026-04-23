@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import WorkerCard from "@/components/WorkerCard";
+import EmptyState from "@/components/EmptyState";
 import type { Worker, Category, ApiResponse } from "@/types";
 
 export const metadata: Metadata = {
@@ -118,18 +119,14 @@ export default async function WorkersPage({ searchParams }: PageProps) {
         {/* Results */}
         <div className="flex-1">
           {workers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border bg-white py-20 text-center shadow-sm">
-              <p className="text-lg font-semibold text-gray-700">No workers found</p>
-              <p className="mt-1 text-sm text-gray-500">
-                Try broadening your search or removing some filters.
-              </p>
-              <Link
-                href="/workers"
-                className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                Clear filters
-              </Link>
-            </div>
+            <EmptyState
+              variant={
+                searchParams.search || searchParams.category || searchParams.location
+                  ? "no-search-results"
+                  : "no-workers"
+              }
+              ctaHref="/workers"
+            />
           ) : (
             <>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">

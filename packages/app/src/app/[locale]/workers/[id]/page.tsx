@@ -9,6 +9,7 @@ import StarRating from "@/components/StarRating";
 import ReviewCard from "@/components/ReviewCard";
 import ReviewForm from "@/components/ReviewForm";
 import QRCodeButton from "@/components/QRCodeButton";
+import EmptyState from "@/components/EmptyState";
 import type { Worker, ApiResponse, Review } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
@@ -188,7 +189,7 @@ export default async function WorkerProfilePage({
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-400 italic">No reviews yet. Be the first!</p>
+            <EmptyState variant="no-reviews" ctaHref="#review-form" />
           )}
         </div>
       </div>
