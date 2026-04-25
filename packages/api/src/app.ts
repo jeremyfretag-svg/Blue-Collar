@@ -14,6 +14,7 @@ import userRoutes from './routes/users.js'
 import disputeRoutes from './routes/disputes.js'
 import recommendationRoutes from './routes/recommendations.js'
 import webhookRoutes from './routes/webhooks.js'
+import verificationRoutes from './routes/verifications.js'
 
 const app = express()
 
@@ -35,6 +36,7 @@ app.use('/api/users', userRoutes)
 app.use('/api/disputes', disputeRoutes)
 app.use('/api/recommendations', recommendationRoutes)
 app.use('/api/webhooks', webhookRoutes)
+app.use('/api/verifications', verificationRoutes)
 
 app.get('/health', async (_req, res) => {
   const checks: Record<string, { status: 'ok' | 'error'; latencyMs?: number; error?: string }> = {}

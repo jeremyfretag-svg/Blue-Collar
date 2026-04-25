@@ -49,6 +49,8 @@ model User {
   disputesResolved Dispute[] @relation("DisputesResolved")
   interactions    UserInteraction[]
   webhooks        WebhookSubscription[]
+  verificationRequests VerificationRequest[] @relation("VerificationRequests")
+  verificationReviews  VerificationRequest[] @relation("VerificationReviews")
 }
 
 model Category {
@@ -88,6 +90,7 @@ model Worker {
   contactRequests     ContactRequest[]
   disputes            Dispute[]
   interactions        UserInteraction[]
+  verificationRequests VerificationRequest[]
 }
 
 model PortfolioItem {
@@ -199,6 +202,31 @@ model WebhookLog {
   subscription   WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   @@index([subscriptionId])
+}
+
+model VerificationRequest {
+  id           String             @id @default(cuid())
+  workerId     String
+  requestedById String
+  documentUrl  String
+  notes        String?
+  status       VerificationStatus @default(pending)
+  reviewedById String?
+  reviewNote   String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  worker       Worker             @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  requestedBy  User               @relation("VerificationRequests", fields: [requestedById], references: [id])
+  reviewedBy   User?              @relation("VerificationReviews", fields: [reviewedById], references: [id])
+
+  @@index([workerId])
+  @@index([status])
+}
+
+enum VerificationStatus {
+  pending
+  approved
+  rejected
 }
 
 enum DisputeStatus {
