@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import WorkerCard from "@/components/WorkerCard";
-import EmptyState from "@/components/EmptyState";
+import WorkersViewToggle from "@/components/WorkersViewToggle";
+import SearchAutocomplete from "@/components/SearchAutocomplete";
 import type { Worker, Category, ApiResponse } from "@/types";
 
 export const metadata: Metadata = {
@@ -70,11 +70,10 @@ export default async function WorkersPage({ searchParams }: PageProps) {
             {/* Search */}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700">Search</label>
-              <input
+              <SearchAutocomplete
                 name="search"
                 defaultValue={searchParams.search ?? ""}
                 placeholder="Worker name…"
-                className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -177,53 +176,36 @@ export default async function WorkersPage({ searchParams }: PageProps) {
           </form>
         </aside>
 
-        {/* Results */}
-        <div className="flex-1">
-          {workers.length === 0 ? (
-            <EmptyState
-              variant={
-                searchParams.search || searchParams.category || searchParams.location ||
-                searchParams.minRating || searchParams.available || searchParams.listedSince
-                  ? "no-search-results"
-                  : "no-workers"
-              }
-              ctaHref="/workers"
-            />
-          ) : (
-            <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {workers.map((w) => (
-                  <WorkerCard key={w.id} worker={w} />
-                ))}
-              </div>
-
-              {/* Pagination */}
-              {meta && meta.pages > 1 && (
-                <div className="mt-8 flex items-center justify-center gap-2">
-                  {Array.from({ length: meta.pages }, (_, i) => i + 1).map((p) => {
-                    const sp = new URLSearchParams({
-                      ...params,
-                      page: String(p),
-                    });
-                    return (
-                      <Link
-                        key={p}
-                        href={`/workers?${sp.toString()}`}
-                        className={`rounded-md px-3 py-1.5 text-sm font-medium border transition-colors ${
-                          p === meta.page
-                            ? "bg-blue-600 text-white border-blue-600"
-                            : "bg-white text-gray-600 hover:bg-gray-50"
-                        }`}
-                      >
-                        {p}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </>
+        {/* Results — list/map toggle */}
+        <WorkersViewToggle
+          workers={workers}
+          hasFilters={!!(
+            searchParams.search || searchParams.category || searchParams.location ||
+            searchParams.minRating || searchParams.available || searchParams.listedSince
           )}
-        </div>
+        />
+
+        {/* Pagination (list view only, rendered server-side) */}
+        {meta && meta.pages > 1 && (
+          <div className="mt-8 flex items-center justify-center gap-2 col-span-full">
+            {Array.from({ length: meta.pages }, (_, i) => i + 1).map((p) => {
+              const sp = new URLSearchParams({ ...params, page: String(p) });
+              return (
+                <Link
+                  key={p}
+                  href={`/workers?${sp.toString()}`}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium border transition-colors ${
+                    p === meta.page
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {p}
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
