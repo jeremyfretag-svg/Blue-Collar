@@ -4,6 +4,7 @@ import { handleError } from '../utils/handleError.js'
 import { db } from '../db.js'
 import { WorkerResource, WorkerCollection } from '../resources/index.js'
 import type { CreateWorkerBody, UpdateWorkerBody, WorkerQuery } from '../interfaces/index.js'
+import { invalidateCachePattern } from '../middleware/cache.js'
 
 /**
  * GET /api/workers
@@ -88,6 +89,8 @@ export async function createWorker(req: Request<{}, {}, CreateWorkerBody>, res: 
 export async function updateWorker(req: Request<{ id: string }, {}, UpdateWorkerBody>, res: Response) {
   try {
     const worker = await workerService.updateWorker(req.params.id, req.body)
+    await invalidateCachePattern(`cache:*workers/${req.params.id}*`)
+    await invalidateCachePattern(`cache:*workers?*`)
     return res.json({
       data: WorkerResource(worker as any),
       status: 'success',
@@ -108,6 +111,8 @@ export async function updateWorker(req: Request<{ id: string }, {}, UpdateWorker
 export async function deleteWorker(req: Request, res: Response) {
   try {
     await workerService.deleteWorker(req.params.id as string)
+    await invalidateCachePattern(`cache:*workers/${req.params.id}*`)
+    await invalidateCachePattern(`cache:*workers?*`)
     return res.status(204).send()
   } catch (err) {
     return handleError(res, err)
@@ -124,6 +129,8 @@ export async function deleteWorker(req: Request, res: Response) {
 export async function toggleActivation(req: Request, res: Response) {
   try {
     const updated = await workerService.toggleWorker(req.params.id as string)
+    await invalidateCachePattern(`cache:*workers/${req.params.id}*`)
+    await invalidateCachePattern(`cache:*workers?*`)
     return res.json({
       data: WorkerResource(updated as any),
       status: 'success',

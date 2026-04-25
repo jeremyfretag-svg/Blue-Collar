@@ -52,6 +52,12 @@ export interface Meta {
   pages: number;
 }
 
+export interface RatingDistributionEntry {
+  rating: number;
+  count: number;
+  percentage: number;
+}
+
 export interface ApiResponse<T> {
   data: T;
   meta?: Meta;

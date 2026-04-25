@@ -17,26 +17,28 @@ import { authenticate, authorize } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { upload, handleMulterError } from '../middleware/upload.js'
 import { createWorkerRules } from '../validations/worker.js'
+import { cacheMiddleware, invalidateCachePattern, TTL } from '../middleware/cache.js'
+import { contactRateLimit, generalRateLimit } from '../middleware/userRateLimit.js'
 
 const router = Router()
 
-router.get('/', listWorkers)
+router.get('/', generalRateLimit, cacheMiddleware(TTL.MEDIUM), listWorkers)
 router.get('/mine', authenticate, authorize('curator', 'admin'), listMyWorkers)
-router.get('/:id', showWorker)
+router.get('/:id', generalRateLimit, cacheMiddleware(TTL.MEDIUM), showWorker)
 router.post('/', authenticate, authorize('curator'), validate(createWorkerRules), createWorker)
 router.put('/:id', authenticate, authorize('curator'), updateWorker)
 router.delete('/:id', authenticate, authorize('curator'), deleteWorker)
 router.patch('/:id/toggle', authenticate, authorize('curator'), toggleActivation)
 
 // Availability
-router.get('/:id/availability', getAvailability)
+router.get('/:id/availability', cacheMiddleware(TTL.SHORT), getAvailability)
 router.put('/:id/availability', authenticate, authorize('curator'), upsertAvailability)
 
 // On-chain registration
 router.post('/:id/register-on-chain', authenticate, authorize('curator'), registerOnChain)
 
 // Contact requests
-router.post('/:id/contact', authenticate, createContactRequest)
+router.post('/:id/contact', authenticate, contactRateLimit, createContactRequest)
 router.get('/:id/contacts', authenticate, authorize('curator'), getContactRequests)
 router.patch('/:id/contacts/:requestId', authenticate, authorize('curator'), updateContactRequestStatus)
 
@@ -44,7 +46,7 @@ router.patch('/:id/contacts/:requestId', authenticate, authorize('curator'), upd
 router.post('/:id/bookmark', authenticate, toggleBookmark)
 
 // Reviews
-router.get('/:id/reviews', listReviews)
+router.get('/:id/reviews', cacheMiddleware(TTL.SHORT), listReviews)
 router.post('/:id/reviews', authenticate, createReview)
 
 export default router

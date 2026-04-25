@@ -35,6 +35,7 @@ export const env = {
   MAIL_USER: process.env.MAIL_USER as string,
   MAIL_PASS: process.env.MAIL_PASS as string,
   APP_URL: process.env.APP_URL as string,
+  REDIS_URL: process.env.REDIS_URL ?? 'redis://localhost:6379',
 } as const;
 
 export default env;

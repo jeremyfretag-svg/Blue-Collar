@@ -29,11 +29,13 @@ export async function createReview(
 }
 
 /**
- * Return a paginated list of reviews for a worker, plus aggregate stats.
+ * Return a paginated list of reviews for a worker, plus aggregate stats and rating distribution.
  */
-export async function listReviews(workerId: string, page: number, limit: number) {
-  const where = { workerId }
-  const [reviews, total, agg] = await Promise.all([
+export async function listReviews(workerId: string, page: number, limit: number, filterRating?: number) {
+  const where = { workerId, ...(filterRating ? { rating: filterRating } : {}) }
+  const baseWhere = { workerId }
+
+  const [reviews, total, agg, allRatings] = await Promise.all([
     db.review.findMany({
       where,
       skip: (page - 1) * limit,
@@ -42,13 +44,28 @@ export async function listReviews(workerId: string, page: number, limit: number)
       include: { author: { select: { id: true, firstName: true, lastName: true, avatar: true } } },
     }),
     db.review.count({ where }),
-    db.review.aggregate({ where, _avg: { rating: true } }),
+    db.review.aggregate({ where: baseWhere, _avg: { rating: true } }),
+    db.review.groupBy({ by: ['rating'], where: baseWhere, _count: { rating: true } }),
   ])
+
+  const totalReviews = await db.review.count({ where: baseWhere })
+
+  // Build distribution: { 1: { count, percentage }, ..., 5: { count, percentage } }
+  const distribution = [5, 4, 3, 2, 1].map((star) => {
+    const entry = allRatings.find((r) => r.rating === star)
+    const count = entry?._count.rating ?? 0
+    return {
+      rating: star,
+      count,
+      percentage: totalReviews > 0 ? Math.round((count / totalReviews) * 100) : 0,
+    }
+  })
 
   return {
     data: reviews,
     meta: { total, page, limit, pages: Math.ceil(total / limit) },
     averageRating: agg._avg.rating ? Math.round(agg._avg.rating * 10) / 10 : null,
-    reviewCount: total,
+    reviewCount: totalReviews,
+    distribution,
   }
 }

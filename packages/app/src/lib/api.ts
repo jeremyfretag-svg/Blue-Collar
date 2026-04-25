@@ -4,7 +4,7 @@
  * clearing auth state and redirecting to /auth/login.
  */
 
-import type { Worker, Category, ApiResponse, Meta, Review } from "@/types";
+import type { Worker, Category, ApiResponse, Meta, Review, RatingDistributionEntry } from "@/types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
 const TOKEN_KEY = "bc_token";
@@ -119,13 +119,17 @@ export const getMyBookmarks = (params?: Record<string, string>) => {
 // Reviews
 export const getWorkerReviews = (workerId: string, params?: Record<string, string>) => {
   const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
-  return request<ApiResponse<Review[]> & { meta: Meta; averageRating: number | null; reviewCount: number }>(
+  return request<ApiResponse<Review[]> & { meta: Meta; averageRating: number | null; reviewCount: number; distribution: RatingDistributionEntry[] }>(
     `/workers/${workerId}/reviews${qs}`
   );
 };
 
 export const createReview = (workerId: string, data: { rating: number; comment?: string }) =>
   request<ApiResponse<Review>>(`/workers/${workerId}/reviews`, { method: "POST", body: data });
+
+// Contact requests
+export const sendContactRequest = (workerId: string, message: string) =>
+  request<ApiResponse<unknown>>(`/workers/${workerId}/contact`, { method: "POST", body: { message } });
 
 // Categories
 export const getCategories = () =>

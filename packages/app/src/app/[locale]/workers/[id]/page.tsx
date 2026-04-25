@@ -6,14 +6,13 @@ import TipModal from "@/components/TipModal";
 import TransactionHistory from "@/components/TransactionHistory";
 import BookmarkButton from "@/components/BookmarkButton";
 import StarRating from "@/components/StarRating";
-import ReviewCard from "@/components/ReviewCard";
-import ReviewForm from "@/components/ReviewForm";
+import ReviewsSection from "@/components/ReviewsSection";
 import QRCodeButton from "@/components/QRCodeButton";
 import EmptyState from "@/components/EmptyState";
 import AvailabilityCalendar from "@/components/AvailabilityCalendar";
 import ZoomableAvatar from "@/components/ZoomableAvatar";
-import PortfolioGallery from "@/components/PortfolioGallery";
-import type { Worker, ApiResponse, Review } from "@/types";
+import ContactModal from "@/components/ContactModal";
+import type { Worker, ApiResponse, Review, RatingDistributionEntry } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
 
@@ -26,8 +25,8 @@ async function fetchWorker(id: string): Promise<Worker | null> {
 
 async function fetchReviews(id: string) {
   const res = await fetch(`${API}/workers/${id}/reviews?limit=10`, { cache: "no-store" });
-  if (!res.ok) return { data: [], averageRating: null, reviewCount: 0 };
-  return res.json() as Promise<{ data: Review[]; averageRating: number | null; reviewCount: number }>;
+  if (!res.ok) return { data: [], averageRating: null, reviewCount: 0, distribution: [] };
+  return res.json() as Promise<{ data: Review[]; averageRating: number | null; reviewCount: number; distribution: RatingDistributionEntry[] }>;
 }
 
 async function fetchAvailability(id: string) {
@@ -68,7 +67,7 @@ export default async function WorkerProfilePage({
   if (!data) notFound();
 
   const worker = data as Worker;
-  const { data: reviews, averageRating, reviewCount } = reviewsData;
+  const { data: reviews, averageRating, reviewCount, distribution } = reviewsData;
 
   const initials = worker.name
     .split(" ")
@@ -126,7 +125,10 @@ export default async function WorkerProfilePage({
             )}
           </div>
 
-          <BookmarkButton workerId={worker.id} />
+          <div className="flex items-center gap-2">
+            <BookmarkButton workerId={worker.id} />
+            <ContactModal workerId={worker.id} workerName={worker.name} />
+          </div>
         </div>
 
         {/* Bio */}
@@ -196,26 +198,13 @@ export default async function WorkerProfilePage({
         </div>
 
         {/* Reviews section */}
-        <div className="mt-8 border-t pt-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-4">
-            Reviews {reviewCount > 0 && `(${reviewCount})`}
-          </h2>
-
-          <div className="mb-6">
-            <p className="text-sm font-medium text-gray-700 mb-3">Leave a review</p>
-            <ReviewForm workerId={worker.id} onReviewCreated={() => {}} />
-          </div>
-
-          {reviews.length > 0 ? (
-            <div>
-              {reviews.map((review) => (
-                <ReviewCard key={review.id} review={review} />
-              ))}
-            </div>
-          ) : (
-            <EmptyState variant="no-reviews" ctaHref="#review-form" />
-          )}
-        </div>
+        <ReviewsSection
+          workerId={worker.id}
+          initialReviews={reviews}
+          reviewCount={reviewCount}
+          averageRating={averageRating}
+          distribution={distribution ?? []}
+        />
       </div>
     </div>
   );
