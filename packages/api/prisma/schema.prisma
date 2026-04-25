@@ -46,6 +46,8 @@ model User {
   reviews       Review[]
   contactRequests ContactRequest[]
   pushSubscriptions PushSubscription[]
+  disputesFiled   Dispute[] @relation("DisputesFiled")
+  disputesResolved Dispute[] @relation("DisputesResolved")
 }
 
 model Category {
@@ -83,6 +85,7 @@ model Worker {
   reviews             Review[]
   availability        Availability[]
   contactRequests     ContactRequest[]
+  disputes            Dispute[]
 }
 
 model Bookmark {
@@ -146,8 +149,31 @@ model PushSubscription {
   @@unique([userId, endpoint])
 }
 
+model Dispute {
+  id          String        @id @default(cuid())
+  workerId    String
+  filedById   String
+  reason      String
+  evidence    String?       // URL or description of evidence
+  status      DisputeStatus @default(open)
+  resolution  String?
+  resolvedById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  worker      Worker        @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  filedBy     User          @relation("DisputesFiled", fields: [filedById], references: [id], onDelete: Cascade)
+  resolvedBy  User?         @relation("DisputesResolved", fields: [resolvedById], references: [id])
+}
+
 enum Role {
   user
   curator
   admin
+}
+
+enum DisputeStatus {
+  open
+  under_review
+  resolved
+  dismissed
 }
