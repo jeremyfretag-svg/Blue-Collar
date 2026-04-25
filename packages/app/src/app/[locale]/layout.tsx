@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { AuthProvider } from "@/context/AuthContext";
 import { WalletProvider } from "@/context/WalletContext";
 import { CompareProvider } from "@/context/CompareContext";
+import { NotificationProvider } from "@/context/NotificationContext";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import { NextIntlClientProvider } from 'next-intl'
@@ -25,10 +26,12 @@ export default async function LocaleLayout({
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="bc_theme">
             <AuthProvider>
               <WalletProvider>
-                <CompareProvider>
-                  {children}
-                  <CompareDrawer />
-                </CompareProvider>
+                <NotificationProvider>
+                  <CompareProvider>
+                    {children}
+                    <CompareDrawer />
+                  </CompareProvider>
+                </NotificationProvider>
               </WalletProvider>
             </AuthProvider>
             <Toaster position="bottom-right" richColors closeButton />
