@@ -51,6 +51,7 @@ model User {
   webhooks        WebhookSubscription[]
   verificationRequests VerificationRequest[] @relation("VerificationRequests")
   verificationReviews  VerificationRequest[] @relation("VerificationReviews")
+  auditLogs            AuditLog[]
 }
 
 model Category {
@@ -227,6 +228,21 @@ enum VerificationStatus {
   pending
   approved
   rejected
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String   // e.g. "auth.login", "worker.create", "admin.delete_user"
+  resource   String?  // e.g. "Worker", "User"
+  resourceId String?
+  meta       Json?    // additional context (IP, changes, etc.)
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
 }
 
 enum DisputeStatus {

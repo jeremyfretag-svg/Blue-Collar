@@ -15,6 +15,8 @@ import disputeRoutes from './routes/disputes.js'
 import recommendationRoutes from './routes/recommendations.js'
 import webhookRoutes from './routes/webhooks.js'
 import verificationRoutes from './routes/verifications.js'
+import auditRoutes from './routes/audit.js'
+import { auditMiddleware } from './middleware/audit.js'
 
 const app = express()
 
@@ -28,6 +30,8 @@ app.use(pinoHttp({ logger }))
 app.use(methodOverride('X-HTTP-Method'))
 app.use(passport.initialize())
 
+app.use(auditMiddleware)
+
 app.use('/api/auth', authRoutes)
 app.use('/api/categories', categoryRoutes)
 app.use('/api/workers', workerRoutes)
@@ -37,6 +41,7 @@ app.use('/api/disputes', disputeRoutes)
 app.use('/api/recommendations', recommendationRoutes)
 app.use('/api/webhooks', webhookRoutes)
 app.use('/api/verifications', verificationRoutes)
+app.use('/api/audit', auditRoutes)
 
 app.get('/health', async (_req, res) => {
   const checks: Record<string, { status: 'ok' | 'error'; latencyMs?: number; error?: string }> = {}
