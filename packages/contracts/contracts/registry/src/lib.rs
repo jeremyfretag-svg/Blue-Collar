@@ -73,6 +73,19 @@ pub enum DataKey {
     Worker(Symbol),
     /// Persistent storage — ordered list of all registered worker id [`Symbol`]s.
     WorkerList,
+    /// Persistent storage — list of [`Delegate`]s for a worker, keyed by worker id.
+    Delegates(Symbol),
+}
+
+/// A delegate entry granting a third-party address permission to manage a worker profile.
+#[contracttype]
+#[derive(Clone)]
+pub struct Delegate {
+    /// The delegated address.
+    pub address: Address,
+    /// Unix timestamp after which this delegation expires.
+    /// A value of `0` means the delegation never expires.
+    pub expires_at: u64,
 }
 
 // =============================================================================
@@ -127,6 +140,141 @@ impl RegistryContract {
             .get(&DataKey::Paused)
             .unwrap_or(false);
         assert!(!paused, "Contract is paused");
+    }
+
+    /// Return the delegate list for a worker, or empty vec if none exist.
+    fn get_delegates(env: &Env, worker_id: &Symbol) -> Vec<Delegate> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Delegates(worker_id.clone()))
+            .unwrap_or(Vec::new(env))
+    }
+
+    /// Assert that `caller` is either the worker's owner or an active (non-expired) delegate.
+    ///
+    /// # Panics
+    /// Panics with `"Not authorized"` if neither condition holds.
+    fn require_owner_or_delegate(env: &Env, worker: &Worker, caller: &Address) {
+        if worker.owner == *caller {
+            return;
+        }
+        let now = env.ledger().timestamp();
+        let delegates = Self::get_delegates(env, &worker.id);
+        let is_valid_delegate = delegates.iter().any(|d| {
+            d.address == *caller && (d.expires_at == 0 || d.expires_at > now)
+        });
+        assert!(is_valid_delegate, "Not authorized");
+    }
+
+    // -------------------------------------------------------------------------
+    // Delegation management
+    // -------------------------------------------------------------------------
+
+    /// Add a delegate for a worker profile. Owner only.
+    ///
+    /// Idempotent — adding an existing delegate updates its expiry.
+    ///
+    /// # Parameters
+    /// - `id`: The worker's unique identifier.
+    /// - `owner`: Must be the worker's owner; `require_auth()` is enforced.
+    /// - `delegate`: Address to grant delegation to.
+    /// - `expires_at`: Unix timestamp when the delegation expires. Pass `0` for no expiry.
+    ///
+    /// # Panics
+    /// - `"Worker not found"` if no worker exists with the given `id`.
+    /// - `"Not authorized"` if `owner` is not the worker's owner.
+    /// - `"Contract is paused"` if paused.
+    ///
+    /// # Events
+    /// Emits `("DlgAdd", id, delegate)` with data `expires_at`.
+    pub fn add_delegate(env: Env, id: Symbol, owner: Address, delegate: Address, expires_at: u64) {
+        owner.require_auth();
+        Self::require_not_paused(&env);
+
+        let worker: Worker = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Worker(id.clone()))
+            .expect("Worker not found");
+        assert!(worker.owner == owner, "Not authorized");
+
+        let mut delegates = Self::get_delegates(&env, &id);
+
+        // Update expiry if delegate already exists, otherwise push.
+        let mut found = false;
+        for i in 0..delegates.len() {
+            let mut d = delegates.get(i).unwrap();
+            if d.address == delegate {
+                d.expires_at = expires_at;
+                delegates.set(i, d);
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            delegates.push_back(Delegate { address: delegate.clone(), expires_at });
+        }
+
+        env.storage().persistent().set(&DataKey::Delegates(id.clone()), &delegates);
+
+        env.events().publish(
+            (symbol_short!("DlgAdd"), id, delegate),
+            expires_at,
+        );
+    }
+
+    /// Remove a delegate from a worker profile. Owner only.
+    ///
+    /// # Parameters
+    /// - `id`: The worker's unique identifier.
+    /// - `owner`: Must be the worker's owner; `require_auth()` is enforced.
+    /// - `delegate`: Address to revoke delegation from.
+    ///
+    /// # Panics
+    /// - `"Worker not found"` if no worker exists with the given `id`.
+    /// - `"Not authorized"` if `owner` is not the worker's owner.
+    /// - `"Delegate not found"` if `delegate` is not in the list.
+    /// - `"Contract is paused"` if paused.
+    ///
+    /// # Events
+    /// Emits `("DlgRem", id, delegate)`.
+    pub fn remove_delegate(env: Env, id: Symbol, owner: Address, delegate: Address) {
+        owner.require_auth();
+        Self::require_not_paused(&env);
+
+        let worker: Worker = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Worker(id.clone()))
+            .expect("Worker not found");
+        assert!(worker.owner == owner, "Not authorized");
+
+        let delegates = Self::get_delegates(&env, &id);
+        let mut updated: Vec<Delegate> = Vec::new(&env);
+        let mut removed = false;
+        for d in delegates.iter() {
+            if d.address == delegate {
+                removed = true;
+            } else {
+                updated.push_back(d);
+            }
+        }
+        assert!(removed, "Delegate not found");
+
+        env.storage().persistent().set(&DataKey::Delegates(id.clone()), &updated);
+
+        env.events().publish(
+            (symbol_short!("DlgRem"), id, delegate),
+            (),
+        );
+    }
+
+    /// Get all delegates for a worker.
+    ///
+    /// # Returns
+    /// A `Vec<Delegate>` (may be empty).
+    pub fn get_worker_delegates(env: Env, id: Symbol) -> Vec<Delegate> {
+        Self::get_delegates(&env, &id)
     }
 
     // -------------------------------------------------------------------------
@@ -340,7 +488,7 @@ impl RegistryContract {
             .persistent()
             .get(&DataKey::Worker(id.clone()))
             .expect("Worker not found");
-        assert!(worker.owner == caller, "Not authorized");
+        Self::require_owner_or_delegate(&env, &worker, &caller);
         worker.is_active = !worker.is_active;
         let new_status = worker.is_active;
         env.storage().persistent().set(&DataKey::Worker(id.clone()), &worker);
@@ -382,7 +530,7 @@ impl RegistryContract {
             .persistent()
             .get(&DataKey::Worker(id.clone()))
             .expect("Worker not found");
-        assert!(worker.owner == caller, "Not authorized");
+        Self::require_owner_or_delegate(&env, &worker, &caller);
 
         worker.name = name.clone();
         worker.category = category.clone();
@@ -429,7 +577,7 @@ impl RegistryContract {
             .get(&DataKey::Worker(id.clone()))
             .expect("Worker not found");
 
-        assert!(worker.owner == caller, "Not authorized");
+        Self::require_owner_or_delegate(&env, &worker, &caller);
 
         worker.name = name.clone();
         worker.category = category.clone();
@@ -625,7 +773,7 @@ impl RegistryContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String, Symbol};
+    use soroban_sdk::{testutils::{Address as _, Ledger, LedgerInfo}, Address, BytesN, Env, String, Symbol};
 
     struct TestEnv {
         env: Env,
@@ -877,5 +1025,153 @@ mod tests {
 
         let page2 = t.client().list_workers_paginated(&3, &3);
         assert_eq!(page2.len(), 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // Delegation tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_add_delegate_allows_toggle() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let delegate = Address::generate(&t.env);
+        t.client().add_delegate(&t.worker_id(), &t.owner, &delegate, &0);
+
+        // Delegate can toggle the worker
+        t.client().toggle(&t.worker_id(), &delegate);
+        assert!(!t.client().get_worker(&t.worker_id()).unwrap().is_active);
+    }
+
+    #[test]
+    fn test_add_delegate_allows_update() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let delegate = Address::generate(&t.env);
+        t.client().add_delegate(&t.worker_id(), &t.owner, &delegate, &0);
+
+        let new_loc = BytesN::from_array(&t.env, &[9u8; 32]);
+        let new_con = BytesN::from_array(&t.env, &[8u8; 32]);
+        t.client().update(
+            &t.worker_id(),
+            &delegate,
+            &String::from_str(&t.env, "Bob"),
+            &Symbol::new(&t.env, "electrician"),
+            &new_loc,
+            &new_con,
+        );
+
+        let worker = t.client().get_worker(&t.worker_id()).unwrap();
+        assert_eq!(worker.location_hash, new_loc);
+    }
+
+    #[test]
+    fn test_get_worker_delegates_returns_list() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let d1 = Address::generate(&t.env);
+        let d2 = Address::generate(&t.env);
+        t.client().add_delegate(&t.worker_id(), &t.owner, &d1, &0);
+        t.client().add_delegate(&t.worker_id(), &t.owner, &d2, &9999);
+
+        let delegates = t.client().get_worker_delegates(&t.worker_id());
+        assert_eq!(delegates.len(), 2);
+    }
+
+    #[test]
+    fn test_remove_delegate_revokes_access() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let delegate = Address::generate(&t.env);
+        t.client().add_delegate(&t.worker_id(), &t.owner, &delegate, &0);
+        t.client().remove_delegate(&t.worker_id(), &t.owner, &delegate);
+
+        let delegates = t.client().get_worker_delegates(&t.worker_id());
+        assert_eq!(delegates.len(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Not authorized")]
+    fn test_expired_delegate_cannot_toggle() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let delegate = Address::generate(&t.env);
+        // expires_at = 1 (already in the past at ledger timestamp 0)
+        t.client().add_delegate(&t.worker_id(), &t.owner, &delegate, &1);
+
+        // Advance ledger time past expiry
+        t.env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+            timestamp: 100,
+            protocol_version: 22,
+            sequence_number: 1,
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 100_000,
+        });
+
+        t.client().toggle(&t.worker_id(), &delegate);
+    }
+
+    #[test]
+    fn test_add_delegate_updates_expiry() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let delegate = Address::generate(&t.env);
+        t.client().add_delegate(&t.worker_id(), &t.owner, &delegate, &100);
+        // Update expiry to 0 (no expiry)
+        t.client().add_delegate(&t.worker_id(), &t.owner, &delegate, &0);
+
+        let delegates = t.client().get_worker_delegates(&t.worker_id());
+        // Still only one entry
+        assert_eq!(delegates.len(), 1);
+        assert_eq!(delegates.get(0).unwrap().expires_at, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Not authorized")]
+    fn test_non_owner_cannot_add_delegate() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let stranger = Address::generate(&t.env);
+        let delegate = Address::generate(&t.env);
+        t.client().add_delegate(&t.worker_id(), &stranger, &delegate, &0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Delegate not found")]
+    fn test_remove_nonexistent_delegate_panics() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let delegate = Address::generate(&t.env);
+        t.client().remove_delegate(&t.worker_id(), &t.owner, &delegate);
+    }
+
+    #[test]
+    #[should_panic(expected = "Not authorized")]
+    fn test_stranger_cannot_toggle_without_delegation() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let stranger = Address::generate(&t.env);
+        t.client().toggle(&t.worker_id(), &stranger);
     }
 }
