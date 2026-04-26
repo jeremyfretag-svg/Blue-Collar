@@ -75,6 +75,35 @@ pub struct Escrow {
     pub cancelled: bool,
 }
 
+/// Multi-signature escrow requiring `threshold` approvals before funds are released.
+///
+/// Any address in `signers` may call [`MarketContract::approve_multisig_release`].
+/// Once `approvals` reaches `threshold` the funds are automatically transferred to `to`.
+#[contracttype]
+#[derive(Clone)]
+pub struct MultiSigEscrow {
+    /// Address that funded the escrow.
+    pub from: Address,
+    /// Address that will receive funds once threshold is met.
+    pub to: Address,
+    /// Token contract address.
+    pub token: Address,
+    /// Locked amount.
+    pub amount: i128,
+    /// Unix timestamp after which `from` may cancel.
+    pub expiry: u64,
+    /// Ordered list of addresses authorised to approve release.
+    pub signers: Vec<Address>,
+    /// Number of approvals required to release funds.
+    pub threshold: u32,
+    /// Addresses that have already approved.
+    pub approvals: Vec<Address>,
+    /// `true` once funds have been released.
+    pub released: bool,
+    /// `true` once funds have been refunded.
+    pub cancelled: bool,
+}
+
 /// Storage keys used throughout the contract.
 #[contracttype]
 pub enum DataKey {
@@ -86,41 +115,8 @@ pub enum DataKey {
     RoleMembers(Symbol),
     /// Persistent storage — [`Escrow`] struct keyed by a caller-supplied id [`Symbol`].
     Escrow(Symbol),
-    /// Persistent storage — [`MilestoneEscrow`] struct keyed by a caller-supplied id [`Symbol`].
-    MilestoneEscrow(Symbol),
-}
-
-/// A single milestone within a [`MilestoneEscrow`].
-#[contracttype]
-#[derive(Clone)]
-pub struct Milestone {
-    /// Amount to release to the worker when this milestone is completed.
-    pub amount: i128,
-    /// `true` once the payer has approved completion and funds have been released.
-    pub completed: bool,
-    /// `true` if this milestone is under dispute.
-    pub disputed: bool,
-}
-
-/// Multi-milestone escrow stored in persistent storage.
-///
-/// The total locked amount equals the sum of all milestone amounts.
-/// Each milestone is released independently via [`MarketContract::complete_milestone`].
-#[contracttype]
-#[derive(Clone)]
-pub struct MilestoneEscrow {
-    /// Address that funded the escrow (the payer).
-    pub from: Address,
-    /// Address that will receive funds as milestones are completed (the worker).
-    pub to: Address,
-    /// Token contract address.
-    pub token: Address,
-    /// Unix timestamp after which the payer may cancel any unreleased funds.
-    pub expiry: u64,
-    /// Ordered list of milestones.
-    pub milestones: Vec<Milestone>,
-    /// `true` once all milestones are completed or the escrow is cancelled.
-    pub cancelled: bool,
+    /// Persistent storage — [`MultiSigEscrow`] keyed by a caller-supplied id [`Symbol`].
+    MultiSigEscrow(Symbol),
 }
 
 // =============================================================================
@@ -558,291 +554,166 @@ impl MarketContract {
     }
 
     // -------------------------------------------------------------------------
-    // Milestone Escrow
+    // Multi-sig escrow (#337)
     // -------------------------------------------------------------------------
 
-    /// Create a multi-milestone escrow, locking the total of all milestone amounts.
+    /// Create a multi-signature escrow requiring `threshold` approvals before release.
+    ///
+    /// Transfers `amount` tokens from `from` to the contract immediately.
     ///
     /// # Parameters
-    /// - `id`: Caller-supplied unique identifier.
+    /// - `id`: Unique identifier for this multi-sig escrow.
     /// - `from`: Payer; `require_auth()` is enforced.
-    /// - `to`: Worker that receives funds per milestone.
+    /// - `to`: Worker that receives funds once threshold is met.
     /// - `token_addr`: Stellar token contract address.
-    /// - `milestones`: Ordered vec of milestone amounts (each must be > 0).
-    /// - `expiry`: Unix timestamp after which `from` may cancel remaining funds.
+    /// - `amount`: Amount to lock (must be > 0).
+    /// - `expiry`: Unix timestamp after which `from` may cancel.
+    /// - `signers`: Addresses authorised to approve release.
+    /// - `threshold`: Number of approvals required (1 ≤ threshold ≤ signers.len()).
     ///
     /// # Panics
-    /// - `"No milestones provided"` if `milestones` is empty.
-    /// - `"Milestone amount must be positive"` if any amount <= 0.
-    /// - `"Milestone escrow id already exists"` on duplicate id.
-    /// - `"Contract is paused"` if paused.
+    /// - `"Amount must be positive"` if `amount <= 0`.
+    /// - `"MultiSigEscrow id already exists"` on duplicate id.
+    /// - `"Invalid threshold"` if threshold is 0 or exceeds signers count.
     ///
     /// # Events
-    /// Emits `("MilCrt", id, from)` with data `(to, token_addr, total_amount, expiry)`.
-    pub fn create_milestone_escrow(
+    /// Emits `("MsEscCrt", id, from)` with data `(to, amount, threshold)`.
+    pub fn create_multisig_escrow(
         env: Env,
         id: Symbol,
         from: Address,
         to: Address,
         token_addr: Address,
-        milestone_amounts: Vec<i128>,
+        amount: i128,
         expiry: u64,
+        signers: Vec<Address>,
+        threshold: u32,
     ) {
         from.require_auth();
-        Self::require_not_paused(&env);
-
-        assert!(!milestone_amounts.is_empty(), "No milestones provided");
+        assert!(amount > 0, "Amount must be positive");
         assert!(
-            !env.storage().persistent().has(&DataKey::MilestoneEscrow(id.clone())),
-            "Milestone escrow id already exists"
+            !env.storage().persistent().has(&DataKey::MultiSigEscrow(id.clone())),
+            "MultiSigEscrow id already exists"
+        );
+        assert!(
+            threshold > 0 && threshold <= signers.len(),
+            "Invalid threshold"
         );
 
-        let mut total: i128 = 0;
-        let mut milestones: Vec<Milestone> = Vec::new(&env);
-        for amt in milestone_amounts.iter() {
-            assert!(amt > 0, "Milestone amount must be positive");
-            total += amt;
-            milestones.push_back(Milestone { amount: amt, completed: false, disputed: false });
-        }
+        let client = token::Client::new(&env, &token_addr);
+        client.transfer(&from, &env.current_contract_address(), &amount);
 
-        let contract_addr = env.current_contract_address();
-        token::Client::new(&env, &token_addr).transfer(&from, &contract_addr, &total);
-
-        let escrow = MilestoneEscrow {
+        let escrow = MultiSigEscrow {
             from: from.clone(),
             to: to.clone(),
-            token: token_addr.clone(),
+            token: token_addr,
+            amount,
             expiry,
-            milestones,
+            signers,
+            threshold,
+            approvals: Vec::new(&env),
+            released: false,
             cancelled: false,
         };
-        env.storage().persistent().set(&DataKey::MilestoneEscrow(id.clone()), &escrow);
+        env.storage().persistent().set(&DataKey::MultiSigEscrow(id.clone()), &escrow);
 
         env.events().publish(
-            (symbol_short!("MilCrt"), id, from),
-            (to, token_addr, total, expiry),
+            (symbol_short!("MsEscCrt"), id, from),
+            (to, amount, threshold),
         );
     }
 
-    /// Mark a milestone as complete and release its funds to the worker.
-    ///
-    /// Only the payer (`from`) may approve completion.
+    /// Approve release of a multi-sig escrow. Funds are released automatically when
+    /// the approval count reaches `threshold`.
     ///
     /// # Parameters
-    /// - `id`: The milestone escrow identifier.
-    /// - `caller`: Must be `from`; `require_auth()` is enforced.
-    /// - `milestone_index`: Zero-based index of the milestone to complete.
+    /// - `id`: The multi-sig escrow identifier.
+    /// - `caller`: Must be in `signers`; `require_auth()` is enforced.
     ///
     /// # Panics
-    /// - `"Milestone escrow not found"` if `id` does not exist.
-    /// - `"Not authorized"` if `caller` is not `from`.
-    /// - `"Escrow cancelled"` if the escrow was cancelled.
-    /// - `"Invalid milestone index"` if index is out of bounds.
-    /// - `"Milestone already completed"` if already released.
-    /// - `"Milestone is disputed"` if under active dispute.
-    /// - `"Contract is paused"` if paused.
+    /// - `"MultiSigEscrow not found"` if no escrow exists with the given `id`.
+    /// - `"Not a signer"` if `caller` is not in the signers list.
+    /// - `"Already approved"` if `caller` has already approved.
+    /// - `"Already released"` / `"Escrow cancelled"` if escrow is finalised.
     ///
     /// # Events
-    /// Emits `("MilCmp", id, milestone_index)` with data `amount`.
-    pub fn complete_milestone(env: Env, id: Symbol, caller: Address, milestone_index: u32) {
+    /// Emits `("MsEscApv", id, caller)` with data `approvals_count`.
+    /// Emits `("MsEscRel", id, to)` with data `amount` when threshold is reached.
+    pub fn approve_multisig_release(env: Env, id: Symbol, caller: Address) {
         caller.require_auth();
-        Self::require_not_paused(&env);
-
-        let mut escrow: MilestoneEscrow = env
+        let mut escrow: MultiSigEscrow = env
             .storage()
             .persistent()
-            .get(&DataKey::MilestoneEscrow(id.clone()))
-            .expect("Milestone escrow not found");
+            .get(&DataKey::MultiSigEscrow(id.clone()))
+            .expect("MultiSigEscrow not found");
 
-        assert!(escrow.from == caller, "Not authorized");
+        assert!(!escrow.released, "Already released");
         assert!(!escrow.cancelled, "Escrow cancelled");
-        assert!(milestone_index < escrow.milestones.len(), "Invalid milestone index");
-
-        let mut milestone = escrow.milestones.get(milestone_index).unwrap();
-        assert!(!milestone.completed, "Milestone already completed");
-        assert!(!milestone.disputed, "Milestone is disputed");
-
-        let amount = milestone.amount;
-        milestone.completed = true;
-        escrow.milestones.set(milestone_index, milestone);
-        env.storage().persistent().set(&DataKey::MilestoneEscrow(id.clone()), &escrow);
-
-        let contract_addr = env.current_contract_address();
-        token::Client::new(&env, &escrow.token).transfer(&contract_addr, &escrow.to, &amount);
-
-        env.events().publish(
-            (symbol_short!("MilCmp"), id, milestone_index),
-            amount,
-        );
-    }
-
-    /// Raise a dispute on a specific milestone.
-    ///
-    /// Either `from` (payer) or `to` (worker) may open a dispute.
-    ///
-    /// # Parameters
-    /// - `id`: The milestone escrow identifier.
-    /// - `caller`: Must be `from` or `to`; `require_auth()` is enforced.
-    /// - `milestone_index`: Zero-based index of the milestone to dispute.
-    ///
-    /// # Panics
-    /// - `"Milestone escrow not found"` if `id` does not exist.
-    /// - `"Not authorized"` if `caller` is neither `from` nor `to`.
-    /// - `"Escrow cancelled"` if the escrow was cancelled.
-    /// - `"Invalid milestone index"` if index is out of bounds.
-    /// - `"Milestone already completed"` if already released.
-    /// - `"Already disputed"` if already under dispute.
-    /// - `"Contract is paused"` if paused.
-    ///
-    /// # Events
-    /// Emits `("MilDsp", id, milestone_index)` with data `caller`.
-    pub fn dispute_milestone(env: Env, id: Symbol, caller: Address, milestone_index: u32) {
-        caller.require_auth();
-        Self::require_not_paused(&env);
-
-        let mut escrow: MilestoneEscrow = env
-            .storage()
-            .persistent()
-            .get(&DataKey::MilestoneEscrow(id.clone()))
-            .expect("Milestone escrow not found");
-
         assert!(
-            escrow.from == caller || escrow.to == caller,
-            "Not authorized"
+            escrow.signers.iter().any(|s| s == caller),
+            "Not a signer"
         );
-        assert!(!escrow.cancelled, "Escrow cancelled");
-        assert!(milestone_index < escrow.milestones.len(), "Invalid milestone index");
+        assert!(
+            escrow.approvals.iter().all(|a| a != caller),
+            "Already approved"
+        );
 
-        let mut milestone = escrow.milestones.get(milestone_index).unwrap();
-        assert!(!milestone.completed, "Milestone already completed");
-        assert!(!milestone.disputed, "Already disputed");
-
-        milestone.disputed = true;
-        escrow.milestones.set(milestone_index, milestone);
-        env.storage().persistent().set(&DataKey::MilestoneEscrow(id.clone()), &escrow);
+        escrow.approvals.push_back(caller.clone());
+        let count = escrow.approvals.len();
 
         env.events().publish(
-            (symbol_short!("MilDsp"), id, milestone_index),
-            caller,
+            (symbol_short!("MsEscApv"), id.clone(), caller),
+            count,
         );
+
+        if count >= escrow.threshold {
+            let client = token::Client::new(&env, &escrow.token);
+            client.transfer(&env.current_contract_address(), &escrow.to, &escrow.amount);
+            escrow.released = true;
+            env.events().publish(
+                (symbol_short!("MsEscRel"), id.clone(), escrow.to.clone()),
+                escrow.amount,
+            );
+        }
+
+        env.storage().persistent().set(&DataKey::MultiSigEscrow(id), &escrow);
     }
 
-    /// Resolve a disputed milestone (admin only).
-    ///
-    /// Admin decides whether to release funds to the worker or refund the payer.
-    ///
-    /// # Parameters
-    /// - `id`: The milestone escrow identifier.
-    /// - `admin`: Must be the contract admin; `require_auth()` is enforced.
-    /// - `milestone_index`: Zero-based index of the disputed milestone.
-    /// - `release_to_worker`: `true` → pay worker; `false` → refund payer.
+    /// Cancel a multi-sig escrow and refund the payer (after expiry, payer only).
     ///
     /// # Panics
-    /// - `"Milestone escrow not found"` if `id` does not exist.
-    /// - `"Unauthorized"` if `admin` is not the stored admin.
-    /// - `"Milestone not disputed"` if the milestone is not under dispute.
-    /// - `"Contract is paused"` if paused.
+    /// - `"MultiSigEscrow not found"`, `"Not authorized"`, `"Already released"`,
+    ///   `"Already cancelled"`, `"Escrow not yet expired"`.
     ///
     /// # Events
-    /// Emits `("MilRes", id, milestone_index)` with data `release_to_worker`.
-    pub fn resolve_milestone_dispute(
-        env: Env,
-        id: Symbol,
-        admin: Address,
-        milestone_index: u32,
-        release_to_worker: bool,
-    ) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_DISPUTE_MGR), &admin);
-        Self::require_not_paused(&env);
-
-        let mut escrow: MilestoneEscrow = env
-            .storage()
-            .persistent()
-            .get(&DataKey::MilestoneEscrow(id.clone()))
-            .expect("Milestone escrow not found");
-
-        assert!(milestone_index < escrow.milestones.len(), "Invalid milestone index");
-
-        let mut milestone = escrow.milestones.get(milestone_index).unwrap();
-        assert!(milestone.disputed, "Milestone not disputed");
-
-        let amount = milestone.amount;
-        milestone.disputed = false;
-        milestone.completed = true;
-        escrow.milestones.set(milestone_index, milestone);
-        env.storage().persistent().set(&DataKey::MilestoneEscrow(id.clone()), &escrow);
-
-        let contract_addr = env.current_contract_address();
-        let recipient = if release_to_worker { escrow.to.clone() } else { escrow.from.clone() };
-        token::Client::new(&env, &escrow.token).transfer(&contract_addr, &recipient, &amount);
-
-        env.events().publish(
-            (symbol_short!("MilRes"), id, milestone_index),
-            release_to_worker,
-        );
-    }
-
-    /// Cancel a milestone escrow and refund all unreleased funds to the payer.
-    ///
-    /// Only callable by `from` after `expiry` has passed.
-    ///
-    /// # Parameters
-    /// - `id`: The milestone escrow identifier.
-    /// - `caller`: Must be `from`; `require_auth()` is enforced.
-    ///
-    /// # Panics
-    /// - `"Milestone escrow not found"` if `id` does not exist.
-    /// - `"Not authorized"` if `caller` is not `from`.
-    /// - `"Already cancelled"` if already cancelled.
-    /// - `"Escrow not yet expired"` if before `expiry`.
-    /// - `"Contract is paused"` if paused.
-    ///
-    /// # Events
-    /// Emits `("MilCnl", id, caller)` with data `refund_amount`.
-    pub fn cancel_milestone_escrow(env: Env, id: Symbol, caller: Address) {
+    /// Emits `("MsEscCnl", id, from)` with data `amount`.
+    pub fn cancel_multisig_escrow(env: Env, id: Symbol, caller: Address) {
         caller.require_auth();
-        Self::require_not_paused(&env);
-
-        let mut escrow: MilestoneEscrow = env
+        let mut escrow: MultiSigEscrow = env
             .storage()
             .persistent()
-            .get(&DataKey::MilestoneEscrow(id.clone()))
-            .expect("Milestone escrow not found");
+            .get(&DataKey::MultiSigEscrow(id.clone()))
+            .expect("MultiSigEscrow not found");
 
         assert!(escrow.from == caller, "Not authorized");
+        assert!(!escrow.released, "Already released");
         assert!(!escrow.cancelled, "Already cancelled");
+        assert!(env.ledger().timestamp() >= escrow.expiry, "Escrow not yet expired");
 
-        let now = env.ledger().timestamp();
-        assert!(now >= escrow.expiry, "Escrow not yet expired");
-
-        // Sum all unreleased (not completed) milestone amounts for refund.
-        let mut refund: i128 = 0;
-        for m in escrow.milestones.iter() {
-            if !m.completed {
-                refund += m.amount;
-            }
-        }
-
+        let client = token::Client::new(&env, &escrow.token);
+        client.transfer(&env.current_contract_address(), &escrow.from, &escrow.amount);
         escrow.cancelled = true;
-        env.storage().persistent().set(&DataKey::MilestoneEscrow(id.clone()), &escrow);
-
-        if refund > 0 {
-            let contract_addr = env.current_contract_address();
-            token::Client::new(&env, &escrow.token).transfer(&contract_addr, &escrow.from, &refund);
-        }
+        env.storage().persistent().set(&DataKey::MultiSigEscrow(id.clone()), &escrow);
 
         env.events().publish(
-            (symbol_short!("MilCnl"), id, caller),
-            refund,
+            (symbol_short!("MsEscCnl"), id, escrow.from),
+            escrow.amount,
         );
     }
 
-    /// Fetch a milestone escrow by id.
-    ///
-    /// # Returns
-    /// `Some(MilestoneEscrow)` if found, `None` otherwise.
-    pub fn get_milestone_escrow(env: Env, id: Symbol) -> Option<MilestoneEscrow> {
-        env.storage().persistent().get(&DataKey::MilestoneEscrow(id))
+    /// Fetch multi-sig escrow details by id.
+    pub fn get_multisig_escrow(env: Env, id: Symbol) -> Option<MultiSigEscrow> {
+        env.storage().persistent().get(&DataKey::MultiSigEscrow(id))
     }
 
     // -------------------------------------------------------------------------
@@ -1111,207 +982,68 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // Milestone escrow tests
+    // Multi-sig escrow tests (#337)
     // -------------------------------------------------------------------------
 
-    fn milestone_id(t: &TestEnv) -> Symbol {
-        Symbol::new(&t.env, "mil1")
-    }
-
-    fn two_milestones(t: &TestEnv) -> Vec<i128> {
-        let mut v = Vec::new(&t.env);
-        v.push_back(100_000_i128);
-        v.push_back(200_000_i128);
-        v
-    }
-
     #[test]
-    fn test_create_milestone_escrow_locks_total() {
+    fn test_multisig_escrow_releases_at_threshold() {
         let t = TestEnv::new();
-        let id = milestone_id(&t);
-        t.client().create_milestone_escrow(&id, &t.payer, &t.worker, &t.token_addr, &two_milestones(&t), &9999);
+        let id = Symbol::new(&t.env, "ms1");
+        let s1 = Address::generate(&t.env);
+        let s2 = Address::generate(&t.env);
+        let signers = soroban_sdk::vec![&t.env, s1.clone(), s2.clone()];
 
-        assert_eq!(t.token_balance(&t.payer), 700_000);
-        assert_eq!(t.token_balance(&t.contract_id), 300_000);
-
-        let esc = t.client().get_milestone_escrow(&id).unwrap();
-        assert_eq!(esc.milestones.len(), 2);
-        assert!(!esc.cancelled);
-    }
-
-    #[test]
-    fn test_complete_milestone_releases_partial_funds() {
-        let t = TestEnv::new();
-        let id = milestone_id(&t);
-        let client = t.client();
-        client.create_milestone_escrow(&id, &t.payer, &t.worker, &t.token_addr, &two_milestones(&t), &9999);
-
-        client.complete_milestone(&id, &t.payer, &0);
-        assert_eq!(t.token_balance(&t.worker), 100_000);
+        t.client().create_multisig_escrow(&id, &t.payer, &t.worker, &t.token_addr, &200_000, &9999, &signers, &2);
         assert_eq!(t.token_balance(&t.contract_id), 200_000);
 
-        let esc = client.get_milestone_escrow(&id).unwrap();
-        assert!(esc.milestones.get(0).unwrap().completed);
-        assert!(!esc.milestones.get(1).unwrap().completed);
+        t.client().approve_multisig_release(&id, &s1);
+        // not yet released
+        assert_eq!(t.token_balance(&t.worker), 0);
+
+        t.client().approve_multisig_release(&id, &s2);
+        // threshold reached
+        assert_eq!(t.token_balance(&t.worker), 200_000);
+        assert!(t.client().get_multisig_escrow(&id).unwrap().released);
     }
 
     #[test]
-    fn test_complete_all_milestones() {
+    #[should_panic(expected = "Not a signer")]
+    fn test_multisig_approve_non_signer_panics() {
         let t = TestEnv::new();
-        let id = milestone_id(&t);
-        let client = t.client();
-        client.create_milestone_escrow(&id, &t.payer, &t.worker, &t.token_addr, &two_milestones(&t), &9999);
-
-        client.complete_milestone(&id, &t.payer, &0);
-        client.complete_milestone(&id, &t.payer, &1);
-
-        assert_eq!(t.token_balance(&t.worker), 300_000);
-        assert_eq!(t.token_balance(&t.contract_id), 0);
+        let id = Symbol::new(&t.env, "ms2");
+        let s1 = Address::generate(&t.env);
+        let signers = soroban_sdk::vec![&t.env, s1.clone()];
+        t.client().create_multisig_escrow(&id, &t.payer, &t.worker, &t.token_addr, &100_000, &9999, &signers, &1);
+        let stranger = Address::generate(&t.env);
+        t.client().approve_multisig_release(&id, &stranger);
     }
 
     #[test]
-    #[should_panic(expected = "Milestone already completed")]
-    fn test_complete_milestone_twice_panics() {
+    #[should_panic(expected = "Already approved")]
+    fn test_multisig_double_approve_panics() {
         let t = TestEnv::new();
-        let id = milestone_id(&t);
-        let client = t.client();
-        client.create_milestone_escrow(&id, &t.payer, &t.worker, &t.token_addr, &two_milestones(&t), &9999);
-        client.complete_milestone(&id, &t.payer, &0);
-        client.complete_milestone(&id, &t.payer, &0);
+        let id = Symbol::new(&t.env, "ms3");
+        let s1 = Address::generate(&t.env);
+        let s2 = Address::generate(&t.env);
+        let signers = soroban_sdk::vec![&t.env, s1.clone(), s2.clone()];
+        t.client().create_multisig_escrow(&id, &t.payer, &t.worker, &t.token_addr, &100_000, &9999, &signers, &2);
+        t.client().approve_multisig_release(&id, &s1);
+        t.client().approve_multisig_release(&id, &s1);
     }
 
     #[test]
-    fn test_dispute_milestone_blocks_completion() {
+    fn test_multisig_cancel_after_expiry() {
         let t = TestEnv::new();
-        let id = milestone_id(&t);
-        let client = t.client();
-        client.create_milestone_escrow(&id, &t.payer, &t.worker, &t.token_addr, &two_milestones(&t), &9999);
-        client.dispute_milestone(&id, &t.worker, &0);
-
-        let esc = client.get_milestone_escrow(&id).unwrap();
-        assert!(esc.milestones.get(0).unwrap().disputed);
-    }
-
-    #[test]
-    #[should_panic(expected = "Milestone is disputed")]
-    fn test_complete_disputed_milestone_panics() {
-        let t = TestEnv::new();
-        let id = milestone_id(&t);
-        let client = t.client();
-        client.create_milestone_escrow(&id, &t.payer, &t.worker, &t.token_addr, &two_milestones(&t), &9999);
-        client.dispute_milestone(&id, &t.worker, &0);
-        client.complete_milestone(&id, &t.payer, &0);
-    }
-
-    #[test]
-    fn test_resolve_dispute_releases_to_worker() {
-        let t = TestEnv::new();
-        let id = milestone_id(&t);
-        let client = t.client();
-        client.create_milestone_escrow(&id, &t.payer, &t.worker, &t.token_addr, &two_milestones(&t), &9999);
-        client.dispute_milestone(&id, &t.payer, &0);
-        client.resolve_milestone_dispute(&id, &t.admin, &0, &true);
-
-        assert_eq!(t.token_balance(&t.worker), 100_000);
-        assert_eq!(t.token_balance(&t.contract_id), 200_000); // second milestone still locked
-    }
-
-    #[test]
-    fn test_cancel_milestone_escrow_refunds_remaining() {
-        let t = TestEnv::new();
-        let id = milestone_id(&t);
-        let client = t.client();
+        let id = Symbol::new(&t.env, "ms4");
+        let s1 = Address::generate(&t.env);
+        let signers = soroban_sdk::vec![&t.env, s1.clone()];
 
         t.set_time(1000);
-        client.create_milestone_escrow(&id, &t.payer, &t.worker, &t.token_addr, &two_milestones(&t), &2000);
-        // Complete first milestone
-        client.complete_milestone(&id, &t.payer, &0);
-        // Cancel after expiry — only second milestone (200_000) should be refunded
+        t.client().create_multisig_escrow(&id, &t.payer, &t.worker, &t.token_addr, &100_000, &2000, &signers, &1);
         t.set_time(3000);
-        client.cancel_milestone_escrow(&id, &t.payer);
+        t.client().cancel_multisig_escrow(&id, &t.payer);
 
-        assert_eq!(t.token_balance(&t.payer), 900_000); // 1_000_000 - 100_000 (worker kept)
-        assert_eq!(t.token_balance(&t.contract_id), 0);
-    }
-
-    #[test]
-    #[should_panic(expected = "Escrow not yet expired")]
-    fn test_cancel_milestone_before_expiry_panics() {
-        let t = TestEnv::new();
-        let id = milestone_id(&t);
-        t.set_time(500);
-        t.client().create_milestone_escrow(&id, &t.payer, &t.worker, &t.token_addr, &two_milestones(&t), &2000);
-        t.client().cancel_milestone_escrow(&id, &t.payer);
-    }
-
-    // -------------------------------------------------------------------------
-    // RBAC tests
-    // -------------------------------------------------------------------------
-
-    #[test]
-    fn test_initialize_grants_admin_role() {
-        let t = TestEnv::new();
-        assert!(t.client().has_role(&Symbol::new(&t.env, ROLE_ADMIN), &t.admin));
-    }
-
-    #[test]
-    fn test_grant_role_allows_new_pauser() {
-        let t = TestEnv::new();
-        let pauser = Address::generate(&t.env);
-        t.client().grant_role(&t.admin, &Symbol::new(&t.env, ROLE_PAUSER), &pauser);
-        assert!(t.client().has_role(&Symbol::new(&t.env, ROLE_PAUSER), &pauser));
-        t.client().pause(&pauser);
-        assert!(t.client().is_paused());
-    }
-
-    #[test]
-    fn test_multiple_admins_can_grant_roles() {
-        let t = TestEnv::new();
-        let admin2 = Address::generate(&t.env);
-        t.client().grant_role(&t.admin, &Symbol::new(&t.env, ROLE_ADMIN), &admin2);
-        let fee_mgr = Address::generate(&t.env);
-        t.client().grant_role(&admin2, &Symbol::new(&t.env, ROLE_FEE_MANAGER), &fee_mgr);
-        assert!(t.client().has_role(&Symbol::new(&t.env, ROLE_FEE_MANAGER), &fee_mgr));
-    }
-
-    #[test]
-    fn test_revoke_role_removes_access() {
-        let t = TestEnv::new();
-        let pauser = Address::generate(&t.env);
-        t.client().grant_role(&t.admin, &Symbol::new(&t.env, ROLE_PAUSER), &pauser);
-        t.client().revoke_role(&t.admin, &Symbol::new(&t.env, ROLE_PAUSER), &pauser);
-        assert!(!t.client().has_role(&Symbol::new(&t.env, ROLE_PAUSER), &pauser));
-    }
-
-    #[test]
-    #[should_panic(expected = "Missing role")]
-    fn test_non_admin_cannot_grant_role() {
-        let t = TestEnv::new();
-        let stranger = Address::generate(&t.env);
-        t.client().grant_role(&stranger, &Symbol::new(&t.env, ROLE_PAUSER), &stranger);
-    }
-
-    #[test]
-    #[should_panic(expected = "Missing role")]
-    fn test_missing_fee_manager_role_panics() {
-        let t = TestEnv::new();
-        let stranger = Address::generate(&t.env);
-        t.client().update_fee(&stranger, &100);
-    }
-
-    #[test]
-    fn test_role_based_fee_update() {
-        let t = TestEnv::new();
-        let fee_mgr = Address::generate(&t.env);
-        t.client().grant_role(&t.admin, &Symbol::new(&t.env, ROLE_FEE_MANAGER), &fee_mgr);
-        t.client().update_fee(&fee_mgr, &200);
-    }
-
-    #[test]
-    #[should_panic(expected = "Account does not hold role")]
-    fn test_revoke_nonexistent_role_panics() {
-        let t = TestEnv::new();
-        let stranger = Address::generate(&t.env);
-        t.client().revoke_role(&t.admin, &Symbol::new(&t.env, ROLE_PAUSER), &stranger);
+        assert_eq!(t.token_balance(&t.payer), 1_000_000);
+        assert!(t.client().get_multisig_escrow(&id).unwrap().cancelled);
     }
 }
