@@ -14,6 +14,7 @@ import { getAvailability, upsertAvailability, addAvailabilitySlot, deleteAvailab
 import { registerOnChain } from '../controllers/stellar.js'
 import { createContactRequest, getContactRequests, updateContactRequestStatus } from '../controllers/contact-request.js'
 import { getWorkerVerifications } from '../controllers/verifications.js'
+import { getAnalytics, trackView } from '../controllers/analytics.js'
 import { authenticate, authorize } from '../middleware/auth.js'
 import { validate } from '../middleware/validate.js'
 import { upload, handleMulterError } from '../middleware/upload.js'
@@ -54,5 +55,9 @@ router.post('/:id/reviews', authenticate, createReview)
 
 // Verifications
 router.get('/:id/verifications', authenticate, authorize('curator', 'admin'), getWorkerVerifications)
+
+// Analytics
+router.post('/:id/analytics/view', trackView)
+router.get('/:id/analytics', authenticate, authorize('curator', 'admin'), getAnalytics)
 
 export default router

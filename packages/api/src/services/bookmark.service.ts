@@ -1,5 +1,6 @@
 import { db } from '../db.js'
 import { AppError } from './AppError.js'
+import { updateBookmarkCount } from './analytics.service.js'
 
 /**
  * Toggle a bookmark for a user/worker pair.
@@ -16,10 +17,12 @@ export async function toggleBookmark(userId: string, workerId: string) {
 
   if (existing) {
     await db.bookmark.delete({ where: { id: existing.id } })
+    updateBookmarkCount(workerId, -1).catch(() => {})
     return { bookmarked: false }
   }
 
   await db.bookmark.create({ data: { userId, workerId } })
+  updateBookmarkCount(workerId, 1).catch(() => {})
   return { bookmarked: true }
 }
 
