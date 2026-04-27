@@ -44,6 +44,30 @@ const ROLE_UPGRADER_CACHED: &str = "upgrader";
 // Types
 // =============================================================================
 
+/// Subscription tier for a worker.
+#[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SubscriptionTier {
+    /// Free tier - no subscription.
+    Free = 0,
+    /// Basic tier - standard visibility.
+    Basic = 1,
+    /// Premium tier - enhanced visibility and features.
+    Premium = 2,
+}
+
+/// Worker subscription information.
+#[contracttype]
+#[derive(Clone)]
+pub struct WorkerSubscription {
+    /// Current subscription tier.
+    pub tier: SubscriptionTier,
+    /// Unix timestamp when subscription expires (0 = never expires).
+    pub expires_at: u64,
+    /// Unix timestamp of last renewal.
+    pub last_renewed_at: u64,
+}
+
 /// On-chain worker profile stored in persistent contract storage.
 ///
 /// `location_hash` and `contact_hash` are SHA-256 digests — raw PII is never
@@ -78,6 +102,8 @@ pub struct Worker {
     pub review_count: u32,
     /// Average rating in basis points (0–10000, where 10000 = 100.00%).
     pub avg_rating: u32,
+    /// Worker subscription status.
+    pub subscription: WorkerSubscription,
 }
 
 /// Delegate record for worker profile management.
@@ -196,10 +222,8 @@ pub enum DataKey {
     StakeInfo(Symbol),
     /// Persistent storage — [`Delegate`] list keyed by worker id.
     Delegates(Symbol),
-    /// Persistent storage — [`LocationVerification`] keyed by worker id.
-    LocationVerification(Symbol),
-    /// Persistent storage — [`AvailabilityStatus`] keyed by worker id.
-    AvailabilityStatus(Symbol),
+    /// Persistent storage — [`WorkerSubscription`] keyed by worker id.
+    Subscription(Symbol),
 }
 
 // =============================================================================
@@ -664,6 +688,11 @@ impl RegistryContract {
             staked_amount: 0,
             review_count: 0,
             avg_rating: 0,
+            subscription: WorkerSubscription {
+                tier: SubscriptionTier::Free,
+                expires_at: 0,
+                last_renewed_at: env.ledger().timestamp(),
+            },
         };
 
         let key = DataKey::Worker(id.clone());
@@ -1010,6 +1039,108 @@ impl RegistryContract {
         env.storage().persistent().extend_ttl(&DataKey::Worker(id.clone()), TTL_THRESHOLD, TTL_EXTEND_TO);
 
         env.events().publish((symbol_short!("RevUpd"), id), (review_count, avg_rating));
+    }
+
+    /// Update a worker's subscription tier and expiration. Admin only.
+    ///
+    /// # Parameters
+    /// - `admin`: Must have admin role; `require_auth()` is enforced.
+    /// - `id`: The worker's unique identifier.
+    /// - `tier`: New subscription tier (0=Free, 1=Basic, 2=Premium).
+    /// - `expires_at`: Unix timestamp when subscription expires (0 = never).
+    ///
+    /// # Panics
+    /// - `"Missing role"` if `admin` does not have admin role.
+    /// - `"Worker not found"` if no worker exists with the given `id`.
+    ///
+    /// # Events
+    /// Emits `("SubUpd", id)` with data `(tier, expires_at)`.
+    pub fn update_subscription(
+        env: Env,
+        admin: Address,
+        id: Symbol,
+        tier: u32,
+        expires_at: u64,
+    ) {
+        Self::require_role(&env, &Symbol::new(&env, ROLE_ADMIN), &admin);
+        Self::require_not_paused(&env);
+
+        let tier_enum = match tier {
+            0 => SubscriptionTier::Free,
+            1 => SubscriptionTier::Basic,
+            2 => SubscriptionTier::Premium,
+            _ => panic!("Invalid subscription tier"),
+        };
+
+        let mut worker: Worker = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Worker(id.clone()))
+            .expect("Worker not found");
+
+        let now = env.ledger().timestamp();
+        worker.subscription = WorkerSubscription {
+            tier: tier_enum,
+            expires_at,
+            last_renewed_at: now,
+        };
+
+        env.storage().persistent().set(&DataKey::Worker(id.clone()), &worker);
+        env.storage().persistent().extend_ttl(&DataKey::Worker(id.clone()), TTL_THRESHOLD, TTL_EXTEND_TO);
+
+        env.events().publish((symbol_short!("SubUpd"), id), (tier, expires_at));
+    }
+
+    /// Renew a worker's subscription. Owner or delegate only.
+    ///
+    /// # Parameters
+    /// - `caller`: Worker owner or delegate; `require_auth()` is enforced.
+    /// - `id`: The worker's unique identifier.
+    /// - `new_expires_at`: New expiration timestamp.
+    ///
+    /// # Panics
+    /// - `"Worker not found"` if no worker exists with the given `id`.
+    /// - `"Not authorized"` if caller is not owner or delegate.
+    ///
+    /// # Events
+    /// Emits `("SubRnw", id)` with data `new_expires_at`.
+    pub fn renew_subscription(env: Env, caller: Address, id: Symbol, new_expires_at: u64) {
+        caller.require_auth();
+        Self::require_not_paused(&env);
+
+        let mut worker: Worker = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Worker(id.clone()))
+            .expect("Worker not found");
+
+        Self::require_owner_or_delegate(&env, &worker, &caller);
+
+        let now = env.ledger().timestamp();
+        worker.subscription.expires_at = new_expires_at;
+        worker.subscription.last_renewed_at = now;
+
+        env.storage().persistent().set(&DataKey::Worker(id.clone()), &worker);
+        env.storage().persistent().extend_ttl(&DataKey::Worker(id.clone()), TTL_THRESHOLD, TTL_EXTEND_TO);
+
+        env.events().publish((symbol_short!("SubRnw"), id), new_expires_at);
+    }
+
+    /// Get a worker's subscription status.
+    ///
+    /// # Parameters
+    /// - `id`: The worker's unique identifier.
+    ///
+    /// # Returns
+    /// The [`WorkerSubscription`] for the worker, or panics if not found.
+    pub fn get_subscription(env: Env, id: Symbol) -> WorkerSubscription {
+        let worker: Worker = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Worker(id))
+            .expect("Worker not found");
+
+        worker.subscription
     }
 
     // -------------------------------------------------------------------------
