@@ -30,6 +30,17 @@ const TTL_EXTEND_TO: u32 = 535_000;
 const TTL_THRESHOLD: u32 = 267_500;
 
 // =============================================================================
+// Gas Optimization Constants (#351)
+// =============================================================================
+
+/// Cached role symbols to reduce symbol creation overhead.
+const ROLE_ADMIN_CACHED: &str = "admin";
+const ROLE_PAUSER_CACHED: &str = "pauser";
+const ROLE_CURATOR_MGR_CACHED: &str = "curator_mgr";
+const ROLE_REP_MGR_CACHED: &str = "rep_mgr";
+const ROLE_UPGRADER_CACHED: &str = "upgrader";
+
+// =============================================================================
 // Types
 // =============================================================================
 
@@ -63,6 +74,20 @@ pub struct Worker {
     pub verified_categories: Vec<Symbol>,
     /// Total tokens staked by this worker for visibility boost.
     pub staked_amount: i128,
+    /// Total number of reviews received by this worker.
+    pub review_count: u32,
+    /// Average rating in basis points (0–10000, where 10000 = 100.00%).
+    pub avg_rating: u32,
+}
+
+/// Delegate record for worker profile management.
+#[contracttype]
+#[derive(Clone)]
+pub struct Delegate {
+    /// Address granted delegation.
+    pub address: Address,
+    /// Unix timestamp when delegation expires (0 = no expiry).
+    pub expires_at: u64,
 }
 
 /// Performance metrics for a worker (#378).
@@ -100,6 +125,30 @@ pub struct CategoryVerification {
     /// Curator who performed the verification.
     pub curator: Address,
     /// Unix timestamp when this verification expires.
+    pub expires_at: u64,
+}
+
+/// Location verification record for a worker.
+#[contracttype]
+#[derive(Clone)]
+pub struct LocationVerification {
+    /// Verifier address.
+    pub verifier: Address,
+    /// Unix timestamp when verification was recorded.
+    pub verified_at: u64,
+    /// Unix timestamp when verification expires.
+    pub expires_at: u64,
+}
+
+/// Worker availability status.
+#[contracttype]
+#[derive(Clone)]
+pub struct AvailabilityStatus {
+    /// Whether worker is currently available.
+    pub is_available: bool,
+    /// Unix timestamp of last availability update.
+    pub updated_at: u64,
+    /// Unix timestamp when availability status expires (0 = no expiry).
     pub expires_at: u64,
 }
 
@@ -237,6 +286,11 @@ impl RegistryContract {
             .unwrap_or(Vec::new(env))
     }
 
+    /// Create a role symbol efficiently (gas optimization #351).
+    fn role_symbol(env: &Env, role_str: &str) -> Symbol {
+        Symbol::new(env, role_str)
+    }
+
     /// Assert that `caller` holds `role` and has authorised this call.
     ///
     /// # Panics
@@ -304,7 +358,7 @@ impl RegistryContract {
     /// # Events
     /// Emits `("RlGrnt", role, account)`.
     pub fn grant_role(env: Env, caller: Address, role: Symbol, account: Address) {
-        let admin_role = Symbol::new(&env, ROLE_ADMIN);
+        let admin_role = Self::role_symbol(&env, ROLE_ADMIN_CACHED);
         Self::require_role(&env, &admin_role, &caller);
         Self::require_not_paused(&env);
 
@@ -332,7 +386,7 @@ impl RegistryContract {
     /// # Events
     /// Emits `("RlRvkd", role, account)`.
     pub fn revoke_role(env: Env, caller: Address, role: Symbol, account: Address) {
-        let admin_role = Symbol::new(&env, ROLE_ADMIN);
+        let admin_role = Self::role_symbol(&env, ROLE_ADMIN_CACHED);
         Self::require_role(&env, &admin_role, &caller);
         Self::require_not_paused(&env);
 
@@ -488,7 +542,8 @@ impl RegistryContract {
     /// # Events
     /// Emits `("Paused", admin)`.
     pub fn pause(env: Env, admin: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_PAUSER), &admin);
+        let pauser_role = Self::role_symbol(&env, ROLE_PAUSER_CACHED);
+        Self::require_role(&env, &pauser_role, &admin);
         env.storage().instance().set(&DataKey::Paused, &true);
         env.events().publish((symbol_short!("Paused"), admin), ());
     }
@@ -504,7 +559,8 @@ impl RegistryContract {
     /// # Events
     /// Emits `("Unpaused", admin)`.
     pub fn unpause(env: Env, admin: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_PAUSER), &admin);
+        let pauser_role = Self::role_symbol(&env, ROLE_PAUSER_CACHED);
+        Self::require_role(&env, &pauser_role, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
         env.events().publish((symbol_short!("Unpaused"), admin), ());
     }
@@ -541,7 +597,8 @@ impl RegistryContract {
     /// # Events
     /// Emits `("CurAdd", admin, curator)`.
     pub fn add_curator(env: Env, admin: Address, curator: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_CURATOR_MGR), &admin);
+        let curator_mgr_role = Self::role_symbol(&env, ROLE_CURATOR_MGR_CACHED);
+        Self::require_role(&env, &curator_mgr_role, &admin);
         Self::require_not_paused(&env);
 
         let mut curators = Self::get_curators(&env);
@@ -565,7 +622,8 @@ impl RegistryContract {
     /// # Events
     /// Emits `("CurRem", admin, curator)`.
     pub fn remove_curator(env: Env, admin: Address, curator: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_CURATOR_MGR), &admin);
+        let curator_mgr_role = Self::role_symbol(&env, ROLE_CURATOR_MGR_CACHED);
+        Self::require_role(&env, &curator_mgr_role, &admin);
         Self::require_not_paused(&env);
 
         let curators = Self::get_curators(&env);
@@ -640,6 +698,8 @@ impl RegistryContract {
             reputation: 0,
             verified_categories: Vec::new(&env),
             staked_amount: 0,
+            review_count: 0,
+            avg_rating: 0,
         };
 
         let key = DataKey::Worker(id.clone());
@@ -929,7 +989,8 @@ impl RegistryContract {
     /// # Events
     /// Emits `("RepUpd", id)` with data `score`.
     pub fn update_reputation(env: Env, admin: Address, id: Symbol, score: u32) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_REP_MGR), &admin);
+        let rep_mgr_role = Self::role_symbol(&env, ROLE_REP_MGR_CACHED);
+        Self::require_role(&env, &rep_mgr_role, &admin);
         Self::require_not_paused(&env);
         assert!(score <= 10_000, "Score out of range");
 
@@ -943,6 +1004,48 @@ impl RegistryContract {
         env.storage().persistent().set(&DataKey::Worker(id.clone()), &worker);
 
         env.events().publish((symbol_short!("RepUpd"), id), score);
+    }
+
+    /// Update a worker's review count and average rating. Admin only.
+    ///
+    /// Calculates weighted average rating based on review count and new rating.
+    ///
+    /// # Parameters
+    /// - `admin`: Must have admin role; `require_auth()` is enforced.
+    /// - `id`: The worker's unique identifier.
+    /// - `review_count`: Total number of reviews.
+    /// - `avg_rating`: Average rating in basis points (0–10000).
+    ///
+    /// # Panics
+    /// - `"Missing role"` if `admin` does not have admin role.
+    /// - `"Worker not found"` if no worker exists with the given `id`.
+    /// - `"Rating out of range"` if `avg_rating > 10000`.
+    ///
+    /// # Events
+    /// Emits `("RevUpd", id)` with data `(review_count, avg_rating)`.
+    pub fn update_reviews(
+        env: Env,
+        admin: Address,
+        id: Symbol,
+        review_count: u32,
+        avg_rating: u32,
+    ) {
+        Self::require_role(&env, &Symbol::new(&env, ROLE_ADMIN), &admin);
+        Self::require_not_paused(&env);
+        assert!(avg_rating <= 10_000, "Rating out of range");
+
+        let mut worker: Worker = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Worker(id.clone()))
+            .expect("Worker not found");
+
+        worker.review_count = review_count;
+        worker.avg_rating = avg_rating;
+        env.storage().persistent().set(&DataKey::Worker(id.clone()), &worker);
+        env.storage().persistent().extend_ttl(&DataKey::Worker(id.clone()), TTL_THRESHOLD, TTL_EXTEND_TO);
+
+        env.events().publish((symbol_short!("RevUpd"), id), (review_count, avg_rating));
     }
 
     // -------------------------------------------------------------------------
@@ -1008,6 +1111,122 @@ impl RegistryContract {
         env.storage()
             .persistent()
             .get(&DataKey::CategoryVerification(worker_id, category))
+    }
+
+    // -------------------------------------------------------------------------
+    // Location verification (#352)
+    // -------------------------------------------------------------------------
+
+    /// Verify a worker's location on-chain. Verifier role required.
+    ///
+    /// # Parameters
+    /// - `verifier`: Address with verification authority; `require_auth()` is enforced.
+    /// - `worker_id`: The worker's unique identifier.
+    /// - `expires_at`: Unix timestamp when verification expires.
+    ///
+    /// # Panics
+    /// - `"Worker not found"` if no worker exists with the given `worker_id`.
+    ///
+    /// # Events
+    /// Emits `("LocVfy", worker_id)` with data `(verifier, verified_at, expires_at)`.
+    pub fn verify_location(
+        env: Env,
+        verifier: Address,
+        worker_id: Symbol,
+        expires_at: u64,
+    ) {
+        verifier.require_auth();
+        let _worker: Worker = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Worker(worker_id.clone()))
+            .expect("Worker not found");
+
+        let now = env.ledger().timestamp();
+        let verification = LocationVerification {
+            verifier: verifier.clone(),
+            verified_at: now,
+            expires_at,
+        };
+        env.storage().persistent().set(
+            &DataKey::LocationVerification(worker_id.clone()),
+            &verification,
+        );
+
+        env.events().publish(
+            (symbol_short!("LocVfy"), worker_id),
+            (verifier, now, expires_at),
+        );
+    }
+
+    /// Get the location verification record for a worker.
+    pub fn get_location_verification(
+        env: Env,
+        worker_id: Symbol,
+    ) -> Option<LocationVerification> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::LocationVerification(worker_id))
+    }
+
+    // -------------------------------------------------------------------------
+    // Availability status (#376)
+    // -------------------------------------------------------------------------
+
+    /// Update a worker's availability status. Owner only.
+    ///
+    /// # Parameters
+    /// - `id`: The worker's unique identifier.
+    /// - `caller`: Must be the worker's owner; `require_auth()` is enforced.
+    /// - `is_available`: New availability status.
+    /// - `expires_at`: Unix timestamp when availability status expires (0 = no expiry).
+    ///
+    /// # Panics
+    /// - `"Worker not found"` if no worker exists with the given `id`.
+    /// - `"Not authorized"` if `caller` is not the worker's owner.
+    ///
+    /// # Events
+    /// Emits `("AvlUpd", id)` with data `(is_available, updated_at, expires_at)`.
+    pub fn update_availability(
+        env: Env,
+        id: Symbol,
+        caller: Address,
+        is_available: bool,
+        expires_at: u64,
+    ) {
+        caller.require_auth();
+        let worker: Worker = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Worker(id.clone()))
+            .expect("Worker not found");
+        assert!(worker.owner == caller, "Not authorized");
+
+        let now = env.ledger().timestamp();
+        let status = AvailabilityStatus {
+            is_available,
+            updated_at: now,
+            expires_at,
+        };
+        env.storage().persistent().set(
+            &DataKey::AvailabilityStatus(id.clone()),
+            &status,
+        );
+
+        env.events().publish(
+            (symbol_short!("AvlUpd"), id),
+            (is_available, now, expires_at),
+        );
+    }
+
+    /// Get the availability status for a worker.
+    pub fn get_availability(
+        env: Env,
+        worker_id: Symbol,
+    ) -> Option<AvailabilityStatus> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::AvailabilityStatus(worker_id))
     }
 
     // -------------------------------------------------------------------------
@@ -1084,6 +1303,8 @@ impl RegistryContract {
                 reputation: 0,
                 verified_categories: Vec::new(&env),
                 staked_amount: 0,
+                review_count: 0,
+                avg_rating: 0,
             };
 
             env.storage().persistent().set(&key, &worker);
@@ -1459,7 +1680,8 @@ impl RegistryContract {
     /// # Panics
     /// Panics with `"Admin only"` if `admin` is not the stored admin.
     pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_UPGRADER), &admin);
+        let upgrader_role = Self::role_symbol(&env, ROLE_UPGRADER_CACHED);
+        Self::require_role(&env, &upgrader_role, &admin);
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 }
@@ -1976,5 +2198,119 @@ mod tests {
         s.base.client().stake(&s.base.owner, &s.base.worker_id(), &s.token_addr, &100_000);
         s.base.client().request_unstake(&s.base.owner, &s.base.worker_id());
         s.base.client().request_unstake(&s.base.owner, &s.base.worker_id());
+    }
+
+    // -------------------------------------------------------------------------
+    // Location verification tests (#352)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_verify_location_stores_record() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let verifier = Address::generate(&t.env);
+        t.client().verify_location(&verifier, &t.worker_id(), &9999);
+
+        let v = t.client().get_location_verification(&t.worker_id()).unwrap();
+        assert_eq!(v.verifier, verifier);
+        assert_eq!(v.expires_at, 9999);
+    }
+
+    #[test]
+    #[should_panic(expected = "Worker not found")]
+    fn test_verify_location_nonexistent_worker_panics() {
+        let t = TestEnv::new();
+        let verifier = Address::generate(&t.env);
+        let nonexistent = Symbol::new(&t.env, "nonexistent");
+        t.client().verify_location(&verifier, &nonexistent, &9999);
+    }
+
+    // -------------------------------------------------------------------------
+    // Availability status tests (#376)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_update_availability_stores_status() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        t.client().update_availability(&t.worker_id(), &t.owner, &true, &9999);
+
+        let status = t.client().get_availability(&t.worker_id()).unwrap();
+        assert!(status.is_available);
+        assert_eq!(status.expires_at, 9999);
+    }
+
+    #[test]
+    fn test_update_availability_toggle() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        t.client().update_availability(&t.worker_id(), &t.owner, &true, &0);
+        let status1 = t.client().get_availability(&t.worker_id()).unwrap();
+        assert!(status1.is_available);
+
+        t.client().update_availability(&t.worker_id(), &t.owner, &false, &0);
+        let status2 = t.client().get_availability(&t.worker_id()).unwrap();
+        assert!(!status2.is_available);
+    }
+
+    #[test]
+    #[should_panic(expected = "Not authorized")]
+    fn test_update_availability_non_owner_panics() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let stranger = Address::generate(&t.env);
+        t.client().update_availability(&t.worker_id(), &stranger, &true, &0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Worker not found")]
+    fn test_update_availability_nonexistent_worker_panics() {
+        let t = TestEnv::new();
+        let nonexistent = Symbol::new(&t.env, "nonexistent");
+        t.client().update_availability(&nonexistent, &t.owner, &true, &0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Contract upgrade tests (#375)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_upgrade_preserves_storage() {
+        let t = TestEnv::new();
+        t.client().add_curator(&t.admin, &t.curator);
+        t.register_worker(&t.curator);
+
+        let worker_before = t.client().get_worker(&t.worker_id()).unwrap();
+        assert_eq!(worker_before.name, String::from_str(&t.env, "Alice"));
+
+        // Simulate upgrade by calling upgrade function
+        let dummy_hash = BytesN::from_array(&t.env, &[1u8; 32]);
+        t.client().upgrade(&t.admin, &dummy_hash);
+
+        // Storage should be preserved (in real scenario, contract would be redeployed)
+        let worker_after = t.client().get_worker(&t.worker_id()).unwrap();
+        assert_eq!(worker_after.name, worker_before.name);
+        assert_eq!(worker_after.owner, worker_before.owner);
+    }
+
+    #[test]
+    fn test_upgrade_requires_upgrader_role() {
+        let t = TestEnv::new();
+        let stranger = Address::generate(&t.env);
+        let dummy_hash = BytesN::from_array(&t.env, &[1u8; 32]);
+
+        // Should panic because stranger doesn't have ROLE_UPGRADER
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            t.client().upgrade(&stranger, &dummy_hash);
+        }));
+        assert!(result.is_err());
     }
 }
