@@ -119,6 +119,24 @@ pub struct StakeInfo {
     pub last_reward_ledger: u64,
 }
 
+/// Badge awarded to a worker for achievements (#380).
+#[contracttype]
+#[derive(Clone)]
+pub struct Badge {
+    /// Badge identifier.
+    pub id: Symbol,
+    /// Badge name/title.
+    pub name: String,
+    /// Issuer address (admin or curator).
+    pub issuer: Address,
+    /// Timestamp when badge was awarded.
+    pub awarded_at: u64,
+    /// Expiry timestamp (0 = no expiry).
+    pub expires_at: u64,
+    /// Whether badge is currently active.
+    pub active: bool,
+}
+
 /// Result of a single registration attempt in [`RegistryContract::batch_register`].
 #[contracttype]
 #[derive(Clone)]
@@ -165,6 +183,10 @@ pub enum DataKey {
     PerformanceMetrics(Symbol),
     /// Persistent storage — list of delegate addresses for a worker.
     Delegates(Symbol),
+    /// Persistent storage — list of badges for a worker.
+    WorkerBadges(Symbol),
+    /// Persistent storage — individual badge keyed by (worker_id, badge_id).
+    Badge(Symbol, Symbol),
 }
 
 // =============================================================================
@@ -1302,6 +1324,126 @@ impl RegistryContract {
         env.storage()
             .persistent()
             .get(&DataKey::PerformanceMetrics(worker_id))
+    }
+
+    // -------------------------------------------------------------------------
+    // Badge System (#380)
+    // -------------------------------------------------------------------------
+
+    /// Award a badge to a worker (admin or curator).
+    pub fn award_badge(
+        env: Env,
+        issuer: Address,
+        worker_id: Symbol,
+        badge_id: Symbol,
+        name: String,
+        expires_at: u64,
+    ) {
+        issuer.require_auth();
+        let is_admin = Self::has_role(env.clone(), Symbol::new(&env, ROLE_ADMIN), issuer.clone());
+        let is_curator = Self::is_curator(env.clone(), issuer.clone());
+        assert!(is_admin || is_curator, "Not authorized");
+
+        let worker: Worker = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Worker(worker_id.clone()))
+            .expect("Worker not found");
+
+        let badge = Badge {
+            id: badge_id.clone(),
+            name: name.clone(),
+            issuer: issuer.clone(),
+            awarded_at: env.ledger().timestamp(),
+            expires_at,
+            active: true,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Badge(worker_id.clone(), badge_id.clone()), &badge);
+
+        let mut badges: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::WorkerBadges(worker_id.clone()))
+            .unwrap_or(Vec::new(&env));
+        if badges.iter().all(|b| b != badge_id) {
+            badges.push_back(badge_id.clone());
+            env.storage()
+                .persistent()
+                .set(&DataKey::WorkerBadges(worker_id.clone()), &badges);
+        }
+
+        env.events().publish(
+            (symbol_short!("BdgAwd"), worker_id, badge_id),
+            (issuer, name),
+        );
+    }
+
+    /// Revoke a badge from a worker (admin or original issuer).
+    pub fn revoke_badge(env: Env, caller: Address, worker_id: Symbol, badge_id: Symbol) {
+        caller.require_auth();
+        let mut badge: Badge = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Badge(worker_id.clone(), badge_id.clone()))
+            .expect("Badge not found");
+
+        let is_admin = Self::has_role(env.clone(), Symbol::new(&env, ROLE_ADMIN), caller.clone());
+        assert!(is_admin || badge.issuer == caller, "Not authorized");
+
+        badge.active = false;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Badge(worker_id.clone(), badge_id.clone()), &badge);
+
+        env.events().publish(
+            (symbol_short!("BdgRvk"), worker_id, badge_id),
+            caller,
+        );
+    }
+
+    /// Verify if a worker has a specific active badge.
+    pub fn verify_badge(env: Env, worker_id: Symbol, badge_id: Symbol) -> bool {
+        if let Some(badge) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Badge>(&DataKey::Badge(worker_id, badge_id))
+        {
+            let now = env.ledger().timestamp();
+            badge.active && (badge.expires_at == 0 || badge.expires_at > now)
+        } else {
+            false
+        }
+    }
+
+    /// Get all badges for a worker.
+    pub fn get_worker_badges(env: Env, worker_id: Symbol) -> Vec<Badge> {
+        let badge_ids: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::WorkerBadges(worker_id.clone()))
+            .unwrap_or(Vec::new(&env));
+
+        let mut badges: Vec<Badge> = Vec::new(&env);
+        for badge_id in badge_ids.iter() {
+            if let Some(badge) = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Badge(worker_id.clone(), badge_id))
+            {
+                badges.push_back(badge);
+            }
+        }
+        badges
+    }
+
+    /// Get a specific badge.
+    pub fn get_badge(env: Env, worker_id: Symbol, badge_id: Symbol) -> Option<Badge> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Badge(worker_id, badge_id))
     }
 
     // -------------------------------------------------------------------------
