@@ -65,6 +65,32 @@ pub struct Worker {
     pub staked_amount: i128,
 }
 
+/// Performance metrics for a worker (#378).
+#[contracttype]
+#[derive(Clone)]
+pub struct PerformanceMetrics {
+    /// Total number of jobs completed.
+    pub jobs_completed: u32,
+    /// Average rating (0-10000 basis points).
+    pub avg_rating: u32,
+    /// Total number of ratings received.
+    pub total_ratings: u32,
+    /// Last update timestamp.
+    pub last_updated: u64,
+    /// Performance score (calculated from metrics).
+    pub performance_score: u32,
+}
+
+/// Delegate authorization for a worker.
+#[contracttype]
+#[derive(Clone)]
+pub struct Delegate {
+    /// Delegate address.
+    pub address: Address,
+    /// Expiry timestamp (0 = no expiry).
+    pub expires_at: u64,
+}
+
 /// On-chain record of a curator verifying a worker's category.
 #[contracttype]
 #[derive(Clone)]
@@ -135,6 +161,10 @@ pub enum DataKey {
     CategoryVerification(Symbol, Symbol),
     /// Persistent storage — [`StakeInfo`] keyed by worker id.
     StakeInfo(Symbol),
+    /// Persistent storage — [`PerformanceMetrics`] keyed by worker id.
+    PerformanceMetrics(Symbol),
+    /// Persistent storage — list of delegate addresses for a worker.
+    Delegates(Symbol),
 }
 
 // =============================================================================
@@ -1207,6 +1237,71 @@ impl RegistryContract {
     /// Get staking info for a worker.
     pub fn get_stake_info(env: Env, worker_id: Symbol) -> Option<StakeInfo> {
         env.storage().persistent().get(&DataKey::StakeInfo(worker_id))
+    }
+
+    // -------------------------------------------------------------------------
+    // Performance Metrics (#378)
+    // -------------------------------------------------------------------------
+
+    /// Update performance metrics for a worker.
+    pub fn update_metrics(
+        env: Env,
+        admin: Address,
+        worker_id: Symbol,
+        jobs_completed: u32,
+        rating: u32,
+    ) {
+        Self::require_role(&env, &Symbol::new(&env, ROLE_REP_MGR), &admin);
+        assert!(rating <= 10_000, "Rating out of range");
+
+        let mut metrics: PerformanceMetrics = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PerformanceMetrics(worker_id.clone()))
+            .unwrap_or(PerformanceMetrics {
+                jobs_completed: 0,
+                avg_rating: 0,
+                total_ratings: 0,
+                last_updated: 0,
+                performance_score: 0,
+            });
+
+        metrics.jobs_completed = jobs_completed;
+        if rating > 0 {
+            let total = metrics.avg_rating as u64 * metrics.total_ratings as u64 + rating as u64;
+            metrics.total_ratings += 1;
+            metrics.avg_rating = (total / metrics.total_ratings as u64) as u32;
+        }
+        metrics.last_updated = env.ledger().timestamp();
+        metrics.performance_score = Self::calculate_performance_score(&metrics);
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::PerformanceMetrics(worker_id.clone()), &metrics);
+
+        env.events().publish(
+            (symbol_short!("MetUpd"), worker_id),
+            (jobs_completed, metrics.avg_rating, metrics.performance_score),
+        );
+    }
+
+    /// Calculate performance score from metrics.
+    fn calculate_performance_score(metrics: &PerformanceMetrics) -> u32 {
+        if metrics.total_ratings == 0 {
+            return 0;
+        }
+        let rating_weight = 70u32;
+        let completion_weight = 30u32;
+        let rating_score = (metrics.avg_rating * rating_weight) / 100;
+        let completion_score = metrics.jobs_completed.min(100) * completion_weight;
+        rating_score + completion_score
+    }
+
+    /// Get performance metrics for a worker.
+    pub fn get_metrics(env: Env, worker_id: Symbol) -> Option<PerformanceMetrics> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::PerformanceMetrics(worker_id))
     }
 
     // -------------------------------------------------------------------------
