@@ -1,7 +1,9 @@
 [workspace]
 members = [
+    "contracts/types",
     "contracts/registry",
     "contracts/market",
+    "contracts/dispute",
 ]
 resolver = "2"
 

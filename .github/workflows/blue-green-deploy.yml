@@ -1,0 +1,145 @@
+name: Blue-Green Deployment
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      api-image: ${{ steps.meta-api.outputs.tags }}
+      app-image: ${{ steps.meta-app.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Registry
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v4
+        with:
+          context: packages/api
+          push: true
+          tags: ${{ secrets.DOCKER_REGISTRY }}/bluecollar-api:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/bluecollar-api:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/bluecollar-api:buildcache,mode=max
+
+      - name: Build and push App image
+        uses: docker/build-push-action@v4
+        with:
+          context: packages/app
+          push: true
+          tags: ${{ secrets.DOCKER_REGISTRY }}/bluecollar-app:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/bluecollar-app:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/bluecollar-app:buildcache,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Deploy to production
+        run: |
+          chmod +x deploy/scripts/deploy-blue-green.sh
+          ./deploy/scripts/deploy-blue-green.sh ${{ github.event.inputs.environment || 'production' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
+          GREEN_VERSION: ${{ github.sha }}
+
+      - name: Notify Slack on success
+        if: success()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "✅ BlueCollar deployment successful",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Deployment Successful* ✅\n*Environment:* ${{ github.event.inputs.environment || 'production' }}\n*Commit:* <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\n*Author:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "❌ BlueCollar deployment failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Deployment Failed* ❌\n*Environment:* ${{ github.event.inputs.environment || 'production' }}\n*Commit:* <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\n*Author:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+
+  rollback:
+    if: failure()
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Rollback deployment
+        run: |
+          chmod +x deploy/scripts/rollback.sh
+          ./deploy/scripts/rollback.sh
+        env:
+          ACTIVE_ENVIRONMENT: green
+
+      - name: Notify Slack of rollback
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "⏮️ BlueCollar deployment rolled back",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Deployment Rolled Back* ⏮️\n*Environment:* ${{ github.event.inputs.environment || 'production' }}\n*Commit:* <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>"
+                  }
+                }
+              ]
+            }

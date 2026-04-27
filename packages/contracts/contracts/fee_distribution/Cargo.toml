@@ -1,0 +1,17 @@
+[package]
+name = "bluecollar_fee_distribution"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { version = "21.5", features = ["alloc"] }
+soroban-contract = { version = "21.5" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

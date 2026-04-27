@@ -74,6 +74,10 @@ pub struct Worker {
     pub verified_categories: Vec<Symbol>,
     /// Total tokens staked by this worker for visibility boost.
     pub staked_amount: i128,
+    /// Total number of reviews received by this worker.
+    pub review_count: u32,
+    /// Average rating in basis points (0–10000, where 10000 = 100.00%).
+    pub avg_rating: u32,
 }
 
 /// Delegate record for worker profile management.
@@ -136,6 +140,16 @@ pub struct StakeInfo {
     pub rewards_accumulated: i128,
     /// Ledger timestamp of last reward calculation.
     pub last_reward_ledger: u64,
+}
+
+/// Delegate record for a worker.
+#[contracttype]
+#[derive(Clone)]
+pub struct Delegate {
+    /// Address of the delegate.
+    pub address: Address,
+    /// Unix timestamp when this delegation expires.
+    pub expires_at: u64,
 }
 
 /// Result of a single registration attempt in [`RegistryContract::batch_register`].
@@ -648,6 +662,8 @@ impl RegistryContract {
             reputation: 0,
             verified_categories: Vec::new(&env),
             staked_amount: 0,
+            review_count: 0,
+            avg_rating: 0,
         };
 
         let key = DataKey::Worker(id.clone());
@@ -954,6 +970,48 @@ impl RegistryContract {
         env.events().publish((symbol_short!("RepUpd"), id), score);
     }
 
+    /// Update a worker's review count and average rating. Admin only.
+    ///
+    /// Calculates weighted average rating based on review count and new rating.
+    ///
+    /// # Parameters
+    /// - `admin`: Must have admin role; `require_auth()` is enforced.
+    /// - `id`: The worker's unique identifier.
+    /// - `review_count`: Total number of reviews.
+    /// - `avg_rating`: Average rating in basis points (0–10000).
+    ///
+    /// # Panics
+    /// - `"Missing role"` if `admin` does not have admin role.
+    /// - `"Worker not found"` if no worker exists with the given `id`.
+    /// - `"Rating out of range"` if `avg_rating > 10000`.
+    ///
+    /// # Events
+    /// Emits `("RevUpd", id)` with data `(review_count, avg_rating)`.
+    pub fn update_reviews(
+        env: Env,
+        admin: Address,
+        id: Symbol,
+        review_count: u32,
+        avg_rating: u32,
+    ) {
+        Self::require_role(&env, &Symbol::new(&env, ROLE_ADMIN), &admin);
+        Self::require_not_paused(&env);
+        assert!(avg_rating <= 10_000, "Rating out of range");
+
+        let mut worker: Worker = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Worker(id.clone()))
+            .expect("Worker not found");
+
+        worker.review_count = review_count;
+        worker.avg_rating = avg_rating;
+        env.storage().persistent().set(&DataKey::Worker(id.clone()), &worker);
+        env.storage().persistent().extend_ttl(&DataKey::Worker(id.clone()), TTL_THRESHOLD, TTL_EXTEND_TO);
+
+        env.events().publish((symbol_short!("RevUpd"), id), (review_count, avg_rating));
+    }
+
     // -------------------------------------------------------------------------
     // Category verification (#338)
     // -------------------------------------------------------------------------
@@ -1209,6 +1267,8 @@ impl RegistryContract {
                 reputation: 0,
                 verified_categories: Vec::new(&env),
                 staked_amount: 0,
+                review_count: 0,
+                avg_rating: 0,
             };
 
             env.storage().persistent().set(&key, &worker);
