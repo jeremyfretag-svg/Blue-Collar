@@ -30,6 +30,17 @@ const TTL_EXTEND_TO: u32 = 535_000;
 const TTL_THRESHOLD: u32 = 267_500;
 
 // =============================================================================
+// Gas Optimization Constants (#351)
+// =============================================================================
+
+/// Cached role symbols to reduce symbol creation overhead.
+const ROLE_ADMIN_CACHED: &str = "admin";
+const ROLE_PAUSER_CACHED: &str = "pauser";
+const ROLE_CURATOR_MGR_CACHED: &str = "curator_mgr";
+const ROLE_REP_MGR_CACHED: &str = "rep_mgr";
+const ROLE_UPGRADER_CACHED: &str = "upgrader";
+
+// =============================================================================
 // Types
 // =============================================================================
 
@@ -225,6 +236,11 @@ impl RegistryContract {
             .unwrap_or(Vec::new(env))
     }
 
+    /// Create a role symbol efficiently (gas optimization #351).
+    fn role_symbol(env: &Env, role_str: &str) -> Symbol {
+        Symbol::new(env, role_str)
+    }
+
     /// Assert that `caller` holds `role` and has authorised this call.
     ///
     /// # Panics
@@ -292,7 +308,7 @@ impl RegistryContract {
     /// # Events
     /// Emits `("RlGrnt", role, account)`.
     pub fn grant_role(env: Env, caller: Address, role: Symbol, account: Address) {
-        let admin_role = Symbol::new(&env, ROLE_ADMIN);
+        let admin_role = Self::role_symbol(&env, ROLE_ADMIN_CACHED);
         Self::require_role(&env, &admin_role, &caller);
         Self::require_not_paused(&env);
 
@@ -320,7 +336,7 @@ impl RegistryContract {
     /// # Events
     /// Emits `("RlRvkd", role, account)`.
     pub fn revoke_role(env: Env, caller: Address, role: Symbol, account: Address) {
-        let admin_role = Symbol::new(&env, ROLE_ADMIN);
+        let admin_role = Self::role_symbol(&env, ROLE_ADMIN_CACHED);
         Self::require_role(&env, &admin_role, &caller);
         Self::require_not_paused(&env);
 
@@ -476,7 +492,8 @@ impl RegistryContract {
     /// # Events
     /// Emits `("Paused", admin)`.
     pub fn pause(env: Env, admin: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_PAUSER), &admin);
+        let pauser_role = Self::role_symbol(&env, ROLE_PAUSER_CACHED);
+        Self::require_role(&env, &pauser_role, &admin);
         env.storage().instance().set(&DataKey::Paused, &true);
         env.events().publish((symbol_short!("Paused"), admin), ());
     }
@@ -492,7 +509,8 @@ impl RegistryContract {
     /// # Events
     /// Emits `("Unpaused", admin)`.
     pub fn unpause(env: Env, admin: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_PAUSER), &admin);
+        let pauser_role = Self::role_symbol(&env, ROLE_PAUSER_CACHED);
+        Self::require_role(&env, &pauser_role, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
         env.events().publish((symbol_short!("Unpaused"), admin), ());
     }
@@ -529,7 +547,8 @@ impl RegistryContract {
     /// # Events
     /// Emits `("CurAdd", admin, curator)`.
     pub fn add_curator(env: Env, admin: Address, curator: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_CURATOR_MGR), &admin);
+        let curator_mgr_role = Self::role_symbol(&env, ROLE_CURATOR_MGR_CACHED);
+        Self::require_role(&env, &curator_mgr_role, &admin);
         Self::require_not_paused(&env);
 
         let mut curators = Self::get_curators(&env);
@@ -553,7 +572,8 @@ impl RegistryContract {
     /// # Events
     /// Emits `("CurRem", admin, curator)`.
     pub fn remove_curator(env: Env, admin: Address, curator: Address) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_CURATOR_MGR), &admin);
+        let curator_mgr_role = Self::role_symbol(&env, ROLE_CURATOR_MGR_CACHED);
+        Self::require_role(&env, &curator_mgr_role, &admin);
         Self::require_not_paused(&env);
 
         let curators = Self::get_curators(&env);
@@ -917,7 +937,8 @@ impl RegistryContract {
     /// # Events
     /// Emits `("RepUpd", id)` with data `score`.
     pub fn update_reputation(env: Env, admin: Address, id: Symbol, score: u32) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_REP_MGR), &admin);
+        let rep_mgr_role = Self::role_symbol(&env, ROLE_REP_MGR_CACHED);
+        Self::require_role(&env, &rep_mgr_role, &admin);
         Self::require_not_paused(&env);
         assert!(score <= 10_000, "Score out of range");
 
@@ -1378,7 +1399,8 @@ impl RegistryContract {
     /// # Panics
     /// Panics with `"Admin only"` if `admin` is not the stored admin.
     pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
-        Self::require_role(&env, &Symbol::new(&env, ROLE_UPGRADER), &admin);
+        let upgrader_role = Self::role_symbol(&env, ROLE_UPGRADER_CACHED);
+        Self::require_role(&env, &upgrader_role, &admin);
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 }
