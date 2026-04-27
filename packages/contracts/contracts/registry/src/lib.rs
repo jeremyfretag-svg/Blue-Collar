@@ -97,6 +97,16 @@ pub struct StakeInfo {
     pub last_reward_ledger: u64,
 }
 
+/// Delegate record for a worker.
+#[contracttype]
+#[derive(Clone)]
+pub struct Delegate {
+    /// Address of the delegate.
+    pub address: Address,
+    /// Unix timestamp when this delegation expires.
+    pub expires_at: u64,
+}
+
 /// Result of a single registration attempt in [`RegistryContract::batch_register`].
 #[contracttype]
 #[derive(Clone)]
@@ -139,6 +149,8 @@ pub enum DataKey {
     CategoryVerification(Symbol, Symbol),
     /// Persistent storage — [`StakeInfo`] keyed by worker id.
     StakeInfo(Symbol),
+    /// Persistent storage — [`Delegate`] list keyed by worker id.
+    Delegates(Symbol),
 }
 
 // =============================================================================
@@ -1080,6 +1092,8 @@ impl RegistryContract {
                 reputation: 0,
                 verified_categories: Vec::new(&env),
                 staked_amount: 0,
+                review_count: 0,
+                avg_rating: 0,
             };
 
             env.storage().persistent().set(&key, &worker);
